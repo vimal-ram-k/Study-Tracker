@@ -89,13 +89,161 @@ async function _idbDel() {
   if (perm === 'granted') {
     _dbFolder = handle;
     _setBtnActive(true);
-    await _writeXL();   // refresh file with latest state on every page load
+    await _readXL();    // load data FROM tracker.xlsx into app state on page load
   } else if (perm === 'prompt') {
     _showReconnectBanner(handle);
   } else {
     try { await _idbDel(); } catch (_) {}
   }
 })();
+
+// ═══════════════════════════════════════════════════
+// READ tracker.xlsx FROM THE db/ FOLDER INTO STATE
+// ═══════════════════════════════════════════════════
+
+async function _readXL() {
+  if (!_dbFolder) return;
+  try {
+    const fh  = await _dbFolder.getFileHandle('tracker.xlsx', { create: false });
+    const file = await fh.getFile();
+    const buf  = await file.arrayBuffer();
+    const X    = _xlsx();
+    const wb   = X.read(buf, { type: 'array', cellDates: true });
+
+    const imported = _parseWorkbook(wb);
+
+    // Only import if the sheet actually has meaningful data
+    const hasData = imported.epics.length || imported.tasks.length ||
+                    imported.sprints.length || imported.subtasks.length;
+    if (!hasData) {
+      // Sheet is blank/placeholder — write current state into it instead
+      await _writeXL();
+      return;
+    }
+
+    // Merge into state and persist to localStorage only — do NOT call saveState()
+    // because that triggers _onSaveState → _writeXL() and overwrites the sheet we just read.
+    state.epics    = imported.epics;
+    state.tasks    = imported.tasks;
+    state.sprints  = imported.sprints;
+    state.subtasks = imported.subtasks;
+    localStorage.setItem('dtt_data', JSON.stringify(state));
+    render();
+    showToast('📊 Loaded data from tracker.xlsx');
+  } catch (e) {
+    if (e && e.name === 'NotFoundError') {
+      // File doesn't exist yet — write current state into it
+      await _writeXL();
+    } else {
+      showToast('⚠️ Could not read tracker.xlsx — ' + (e && e.message ? e.message : e));
+    }
+  }
+}
+
+// ─── Parse workbook sheets back into app state objects ─
+function _parseWorkbook(wb) {
+  const X = _xlsx();
+
+  function sheetRows(name) {
+    const ws = wb.Sheets[name];
+    if (!ws) return [];
+    return X.utils.sheet_to_json(ws, { defval: '' });
+  }
+
+  // --- Epics ---
+  const epicRows = sheetRows('Epics');
+  const epics = epicRows
+    .filter(r => r['Epic'] && r['Epic'] !== 'No epics yet')
+    .map(r => ({
+      id:          r['__id']       || uid(),
+      name:        r['Epic']       || '',
+      desc:        r['Description']|| '',
+      priority:    r['Priority']   || 'Medium',
+      createdAt:   r['Created']    || new Date().toISOString(),
+    }));
+
+  // --- Sprints ---
+  const sprintRows = sheetRows('Sprints');
+  const sprints = sprintRows
+    .filter(r => r['Sprint'] && r['Sprint'] !== 'No sprints yet')
+    .map(r => ({
+      id:        r['__id']      || uid(),
+      name:      r['Sprint']   || '',
+      goal:      r['Goal']     || '',
+      startDate: _xlDateToISO(r['Start Date']),
+      endDate:   _xlDateToISO(r['End Date']),
+    }));
+
+  // Build lookup maps by name for cross-referencing
+  const epicByName   = {};
+  epics.forEach(e   => { epicByName[e.name]   = e; });
+  const sprintByName = {};
+  sprints.forEach(s => { sprintByName[s.name] = s; });
+
+  // --- Tasks ---
+  const taskRows = sheetRows('Tasks');
+  const tasks = taskRows
+    .filter(r => r['Task'] && r['Task'] !== 'No tasks yet')
+    .map(r => {
+      const epic   = epicByName[r['Epic']]     || null;
+      const sprint = sprintByName[r['Sprint']] || null;
+      return {
+        id:        r['__id']       || uid(),
+        name:      r['Task']       || '',
+        desc:      r['Description']|| '',
+        epicId:    epic   ? epic.id   : '',
+        sprintId:  sprint ? sprint.id : '',
+        status:    r['Status']     || 'To Do',
+        priority:  r['Priority']   || 'Medium',
+        assignee:  r['Assignee']   || '',
+        dueDate:   _xlDateToISO(r['Due Date']),
+        createdAt: r['Created']    || new Date().toISOString(),
+        updatedAt: r['Updated']    || new Date().toISOString(),
+      };
+    });
+
+  // Build task lookup by name for subtasks
+  const taskByName = {};
+  tasks.forEach(t => { taskByName[t.name] = t; });
+
+  // --- Subtasks ---
+  const subtaskRows = sheetRows('Subtasks');
+  const subtasks = subtaskRows
+    .filter(r => r['Subtask'] && r['Subtask'] !== 'No subtasks yet')
+    .map(r => {
+      const task   = taskByName[r['Parent Task']] || null;
+      const sprint = sprintByName[r['Sprint']]    || null;
+      return {
+        id:        r['__id']        || uid(),
+        name:      r['Subtask']     || '',
+        desc:      r['Description'] || '',
+        taskId:    task   ? task.id   : '',
+        sprintId:  sprint ? sprint.id : '',
+        status:    r['Status']      || 'To Do',
+        priority:  r['Priority']    || 'Medium',
+        assignee:  r['Assignee']    || '',
+        dueDate:   _xlDateToISO(r['Due Date']),
+        createdAt: r['Created']     || new Date().toISOString(),
+        updatedAt: r['Created']     || new Date().toISOString(),
+      };
+    });
+
+  return { epics, tasks, sprints, subtasks };
+}
+
+// Convert an Excel date cell value (JS Date, ISO string, or locale string) to YYYY-MM-DD or ''
+function _xlDateToISO(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    return isNaN(val) ? '' : val.toISOString().slice(0, 10);
+  }
+  if (typeof val === 'string') {
+    // Try parsing as a date string
+    const d = new Date(val);
+    return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+  }
+  return '';
+}
 
 // ─── Reconnect banner ─────────────────────────────────
 function _showReconnectBanner(handle) {
@@ -148,10 +296,21 @@ async function _pickFolder() {
   try { await _idbSet(handle); } catch (_) {}
 
   _dbFolder = handle;
-  const ok  = await _writeXL();
-  if (ok) {
+
+  // Check if tracker.xlsx already exists in the selected folder — if so, read it
+  let fileExists = false;
+  try { await handle.getFileHandle('tracker.xlsx', { create: false }); fileExists = true; }
+  catch (_) { fileExists = false; }
+
+  if (fileExists) {
     _setBtnActive(true);
-    showToast(`✅ Connected to ${handle.name}/ — tracker.xlsx updates on every change`);
+    await _readXL();
+  } else {
+    const ok = await _writeXL();
+    if (ok) {
+      _setBtnActive(true);
+      showToast(`✅ Connected to ${handle.name}/ — tracker.xlsx updates on every change`);
+    }
   }
 }
 
@@ -224,7 +383,7 @@ function _tasksRows() {
   const rows = [[
     'Task', 'Description', 'Epic', 'Epic Priority',
     'Sprint', 'Month', 'Status', 'Priority',
-    'Assignee', 'Due Date', 'Created', 'Updated'
+    'Assignee', 'Due Date', 'Created', 'Updated', '__id'
   ]];
   (state.tasks || []).forEach(t => {
     const spr = sprMap(t.sprintId);
@@ -240,7 +399,8 @@ function _tasksRows() {
       t.assignee    || '',
       t.dueDate     ? _d(t.dueDate + 'T00:00:00') : '',
       _d(t.createdAt),
-      _d(t.updatedAt || t.createdAt)
+      _d(t.updatedAt || t.createdAt),
+      t.id
     ]);
   });
   if (rows.length === 1) rows.push(['No tasks yet']);
@@ -251,7 +411,7 @@ function _tasksRows() {
 function _sprintsRows() {
   const rows = [[
     'Sprint', 'Goal', 'Start Date', 'End Date', 'Month',
-    'Total Tasks', 'Done', 'In Progress', 'Practice', 'Revise', 'To Do', '% Done'
+    'Total Tasks', 'Done', 'In Progress', 'Practice', 'Revise', 'To Do', '% Done', '__id'
   ]];
   (state.sprints || []).forEach(s => {
     const tasks = (state.tasks || []).filter(t => t.sprintId === s.id);
@@ -263,7 +423,7 @@ function _sprintsRows() {
       s.startDate || '', s.endDate || '',
       s.startDate ? s.startDate.slice(0, 7) : '',
       tasks.length, done, cnt('In Progress'), cnt('Practice'), cnt('Revise'), cnt('To Do'),
-      pct + '%'
+      pct + '%', s.id
     ]);
   });
   if (rows.length === 1) rows.push(['No sprints yet']);
@@ -275,7 +435,7 @@ function _epicsRows() {
   const rows = [[
     'Epic', 'Description', 'Priority',
     'Total Tasks', 'Done', 'In Progress', 'Practice', 'Revise', 'To Do',
-    '% Done', 'Created'
+    '% Done', 'Created', '__id'
   ]];
   (state.epics || []).forEach(e => {
     const tasks = (state.tasks || []).filter(t => t.epicId === e.id);
@@ -285,7 +445,7 @@ function _epicsRows() {
     rows.push([
       e.name, e.desc || '', e.priority || 'Medium',
       tasks.length, done, cnt('In Progress'), cnt('Practice'), cnt('Revise'), cnt('To Do'),
-      pct + '%', _d(e.createdAt)
+      pct + '%', _d(e.createdAt), e.id
     ]);
   });
   if (rows.length === 1) rows.push(['No epics yet']);
@@ -299,7 +459,7 @@ function _subtasksRows() {
   const taskMap = _taskLookup();
   const rows = [[
     'Subtask', 'Description', 'Parent Task', 'Epic', 'Sprint',
-    'Status', 'Priority', 'Assignee', 'Due Date', 'Created'
+    'Status', 'Priority', 'Assignee', 'Due Date', 'Created', '__id'
   ]];
   (state.subtasks || []).forEach(s => {
     const task   = taskMap(s.taskId);
@@ -315,7 +475,8 @@ function _subtasksRows() {
       s.priority    || 'Medium',
       s.assignee    || '',
       s.dueDate     ? _d(s.dueDate + 'T00:00:00') : '',
-      _d(s.createdAt)
+      _d(s.createdAt),
+      s.id
     ]);
   });
   if (rows.length === 1) rows.push(['No subtasks yet']);
