@@ -131,9 +131,10 @@ function epicById(id) {
 }
 
 function priorityBadge(p) {
-  const map   = { High: 'high', Medium: 'medium', Low: 'low' };
-  const icons = { High: '🔴',   Medium: '🟡',     Low: '🟢'  };
-  return `<span class="badge badge-${map[p]}">${icons[p]} ${p}</span>`;
+  const map = { High: 'high', Medium: 'medium', Low: 'low' };
+  const colors = { High: '#dc2626', Medium: '#f59e0b', Low: '#16a34a' };
+  const label = p || 'Medium';
+  return `<span class="priority-dot priority-${map[p] || 'medium'}" title="${esc(label)}" style="background:${colors[p] || colors.Medium};"></span>`;
 }
 
 function statusClass(s) {
@@ -155,6 +156,10 @@ function esc(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function buildSubtaskSummaryHtml(total, done) {
+  return `⊞${total ? ` <span class="subtask-pill">${done}/${total}</span>` : ''}`;
 }
 
 // ─── Summary bar ─────────────────────────────────────
@@ -180,28 +185,18 @@ function renderSummary() {
   document.getElementById('summary-bar').innerHTML = `
     <div class="stat-card accent">
       <div class="stat-value">${state.epics.length}</div>
-      <div class="stat-label">Epics</div>
+      <div class="stat-label" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-start;">
+        ${selectedEpic ? `<span title="${esc(selectedEpic.name)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;display:inline-block;">${esc(selectedEpic.name)}</span>` : 'Epics'}
+        ${selectedEpic ? `<button class="btn-clear-epic" data-action="clear-epic" title="Clear filter">✕ clear</button>` : ''}
+      </div>
     </div>
     <div class="stat-card sprint">
-      <div class="stat-value">${sprintCount}</div>
-      <div class="stat-label">Sprint Tasks</div>
+      <div class="stat-value">${selectedSprint ? total : sprintCount}</div>
+      <div class="stat-label" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-start;">
+        ${selectedSprint ? `<span title="${esc(selectedSprint.name)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;display:inline-block;">${esc(selectedSprint.name)}</span>` : 'Sprint Tasks'}
+        ${selectedSprint ? `<button class="btn-clear-epic" data-action="clear-epic" title="Clear filter">✕ clear</button>` : ''}
+      </div>
     </div>
-    ${selectedSprint ? `
-    <div class="stat-card selected-epic-stat">
-      <div class="stat-value" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-           title="${esc(selectedSprint.name)}">⚡ ${esc(selectedSprint.name)}</div>
-      <div class="stat-label">Active Filter
-        <button class="btn-clear-epic" data-action="clear-epic" title="Clear filter">✕ clear</button>
-      </div>
-    </div>` : ''}
-    ${selectedEpic ? `
-    <div class="stat-card selected-epic-stat">
-      <div class="stat-value" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-           title="${esc(selectedEpic.name)}">${esc(selectedEpic.name)}</div>
-      <div class="stat-label">Selected Epic
-        <button class="btn-clear-epic" data-action="clear-epic" title="Clear filter">✕ clear</button>
-      </div>
-    </div>` : ''}
     <div class="stat-card">
       <div class="stat-value">${total}</div>
       <div class="stat-label">${selectedSprint ? 'Sprint Tasks' : selectedEpic ? 'Epic Tasks' : 'Total Tasks'}</div>
@@ -286,7 +281,7 @@ function buildEpicCard(epic) {
       </div>
       <div class="kcard-actions">
         <button class="btn btn-secondary btn-icon" data-action="add-task" data-epic-id="${epic.id}" title="Add task">＋</button>
-        <button class="btn btn-secondary btn-icon" data-action="edit-epic" data-id="${epic.id}" title="Edit">✏️</button>
+        <button class="btn btn-ghost btn-sm" data-action="edit-epic" data-id="${epic.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-action="delete-epic" data-id="${epic.id}">Delete</button>
       </div>
     </div>
@@ -325,6 +320,8 @@ function buildSprintCard(sprint, today) {
                        && (!selectedEpicId || t.epicId === selectedEpicId));
   const done       = tasks.filter(t => t.status === 'Done').length;
   const pct        = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const subTasks   = subtasksForSprint(sprint.id);
+  const subDone    = subTasks.filter(s => s.status === 'Done').length;
   const isCurrent  = today >= sprint.startDate && today <= sprint.endDate;
   const isUpcoming = today < sprint.startDate;
   const statusTag  = isCurrent  ? '<span class="sprint-tag sprint-tag--active">Active</span>'
@@ -349,8 +346,11 @@ function buildSprintCard(sprint, today) {
           <span class="kprog-label">${pct}%</span>
         </div>` : ''}
       </div>
+      <button class="btn-subtasks" data-action="complete-sprint" data-id="${sprint.id}" title="View sprint subtasks">
+        ${buildSubtaskSummaryHtml(subTasks.length, subDone)}
+      </button>
       <div class="kcard-actions">
-        <button class="btn btn-secondary btn-icon" data-action="edit-sprint" data-id="${sprint.id}" title="Edit">✏️</button>
+        <button class="btn btn-ghost btn-sm" data-action="edit-sprint" data-id="${sprint.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-action="delete-sprint" data-id="${sprint.id}">Delete</button>
       </div>
     </div>
@@ -412,7 +412,7 @@ function buildTaskCard(task) {
           ${over ? '⚠️ ' : '📅 '}${formatDate(task.dueDate)}
         </div>` : ''}
       <button class="btn-subtasks" data-action="view-subtasks" data-task-id="${task.id}">
-        ⊞ Subtasks${subCount ? ` <span class="subtask-pill">${subDone}/${subCount}</span>` : ''}
+        ${buildSubtaskSummaryHtml(subCount, subDone)}
       </button>
       <div class="kcard-actions">
         ${active
@@ -420,7 +420,7 @@ function buildTaskCard(task) {
             ? `<button class="btn btn-secondary btn-icon btn-sprint-remove" data-action="remove-from-sprint" data-task-id="${task.id}" title="Remove from current sprint">✕</button>`
             : `<button class="btn btn-secondary btn-icon btn-sprint-add" data-action="add-to-sprint" data-task-id="${task.id}" title="Add to ${esc(active.name)}">⚡</button>`
           : ''}
-        <button class="btn btn-secondary btn-icon" data-action="edit-task" data-task-id="${task.id}" title="Edit">✏️</button>
+        <button class="btn btn-ghost btn-sm" data-action="edit-task" data-task-id="${task.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-action="delete-task" data-task-id="${task.id}">Delete</button>
       </div>
     </div>
@@ -510,7 +510,6 @@ function buildGvPane(epic, rowEl) {
 
   const tasks   = allTasks().filter(t => t.epicId === epic.id);
   const done    = tasks.filter(t => t.status === 'Done').length;
-  const pct     = tasks.length ? Math.round(done / tasks.length * 100) : 0;
 
   // Compact pane header: epic name + progress + add-task button
   const hdr = document.createElement('div');
@@ -520,8 +519,7 @@ function buildGvPane(epic, rowEl) {
     <div class="gv-pane-meta">
       ${priorityBadge(epic.priority)}
       <span class="gv-pane-stat">${tasks.length} task${tasks.length !== 1 ? 's' : ''}</span>
-      <span class="gv-pane-stat">${pct}%</span>
-      <div class="kprog-bar" style="width:60px"><div class="kprog-fill" style="width:${pct}%"></div></div>
+      <span class="gv-pane-progress">${done} of ${tasks.length}</span>
       <button class="btn btn-secondary btn-sm" data-action="add-task" data-epic-id="${epic.id}">+ Task</button>
     </div>
   `;
@@ -591,9 +589,11 @@ function buildGvTaskCard(task) {
         ${task.assignee ? `<span class="kcard-assignee">👤 ${esc(task.assignee)}</span>` : ''}
       </div>
       ${task.dueDate ? `<div class="kcard-due ${over ? 'overdue' : ''}">${over ? '⚠️ ' : '📅 '}${formatDate(task.dueDate)}</div>` : ''}
-      ${subCount ? `<button class="btn-subtasks" data-action="view-subtasks" data-task-id="${task.id}">⊞ <span class="subtask-pill">${subDone}/${subCount}</span></button>` : ''}
+      <button class="btn-subtasks" data-action="view-subtasks" data-task-id="${task.id}">
+        ${buildSubtaskSummaryHtml(subCount, subDone)}
+      </button>
       <div class="kcard-actions">
-        <button class="btn btn-secondary btn-icon" data-action="edit-task" data-task-id="${task.id}" title="Edit">✏️</button>
+        <button class="btn btn-ghost btn-sm" data-action="edit-task" data-task-id="${task.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-action="delete-task" data-task-id="${task.id}">Delete</button>
       </div>
     </div>
@@ -832,6 +832,16 @@ function handleGridClick(e) {
   if (action === 'edit-sprint') {
     openSprintModal(sprintById(btn.dataset.id));
   }
+  if (action === 'complete-sprint') {
+    const sprint = sprintById(btn.dataset.id);
+    if (!sprint) return;
+    const sourceRect = btn.getBoundingClientRect();
+    selectedSprintId = sprint.id;
+    selectedEpicId = null;
+    render();
+    openSubtaskPanel({ sprintId: sprint.id, sourceRect });
+    return;
+  }
   if (action === 'delete-sprint') {
     const id  = btn.dataset.id;
     const spr = sprintById(id);
@@ -867,7 +877,7 @@ function handleGridClick(e) {
     );
   }
   if (action === 'view-subtasks') {
-    openSubtaskPanel(btn.dataset.taskId);
+    openSubtaskPanel({ taskId: btn.dataset.taskId, sourceEl: btn });
     return;
   }
   if (action === 'edit-task') {
@@ -1111,9 +1121,18 @@ function allSubtasks() {
 function subtasksOf(taskId) {
   return allSubtasks().filter(s => s.taskId === taskId);
 }
+function subtasksForSprint(sprintId) {
+  const sprintTaskIds = allTasks()
+    .filter(t => t.sprintId === sprintId)
+    .map(t => t.id);
+  return allSubtasks().filter(s => sprintTaskIds.includes(s.taskId));
+}
 
 // ─── Subtask Panel state ──────────────────────────────
 let _panelTaskId = null;   // which task's subtasks are shown
+let _panelContext = null; // { type: 'task'|'sprint', id?: string, sprintId?: string }
+let _panelAnchorEl = null; // clicked button/card element used for connector
+let _panelAnchorRect = null; // captured rect when the source element is re-rendered away
 
 // Status columns shown in the subtask panel (no Epic column)
 const SUB_COLS = [
@@ -1128,14 +1147,21 @@ const SUB_COLS = [
 const _connSvg = document.getElementById('connector-svg');
 
 function drawConnector() {
-  if (!_panelTaskId) { clearConnector(); return; }
-
-  // Find the active task card in the live DOM
-  const card = document.querySelector(`.kcard[data-task-id="${_panelTaskId}"]`);
   const panel = document.getElementById('subtask-panel');
-  if (!card || panel.classList.contains('hidden')) { clearConnector(); return; }
+  if (!panel || panel.classList.contains('hidden')) { clearConnector(); return; }
 
-  const cr = card.getBoundingClientRect();
+  let cr = null;
+  if (_panelAnchorRect) {
+    cr = _panelAnchorRect;
+  } else if (_panelAnchorEl && _panelAnchorEl.isConnected) {
+    cr = _panelAnchorEl.getBoundingClientRect();
+  } else if (_panelTaskId) {
+    const card = document.querySelector(`.kcard[data-task-id="${_panelTaskId}"]`);
+    if (card) cr = card.getBoundingClientRect();
+  }
+
+  if (!cr) { clearConnector(); return; }
+
   const pr = panel.getBoundingClientRect();
 
   // Card dot: right-middle edge of the task card
@@ -1269,16 +1295,48 @@ function clearConnector() {
   });
 })();
 
-function openSubtaskPanel(taskId) {
+function openSubtaskPanel(context) {
   const panel = document.getElementById('subtask-panel');
   const isNew = panel.classList.contains('hidden');
-  _panelTaskId = taskId;
-  const task = allTasks().find(t => t.id === taskId);
-  document.getElementById('subtask-panel-task-name').textContent = task ? task.name : '';
+  _panelContext = null;
+  _panelTaskId = null;
+  _panelAnchorEl = null;
+  _panelAnchorRect = null;
+
+  if (context && typeof context === 'object' && context.sprintId) {
+    _panelContext = { type: 'sprint', sprintId: context.sprintId };
+    const sprint = sprintById(context.sprintId);
+    document.getElementById('subtask-panel-task-name').textContent = sprint ? `${sprint.name} subtasks` : 'Sprint subtasks';
+    if (context.sourceEl) {
+      _panelAnchorEl = context.sourceEl;
+      const rect = context.sourceEl.getBoundingClientRect();
+      _panelAnchorRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom };
+    } else if (context.sourceRect) {
+      _panelAnchorRect = context.sourceRect;
+    }
+  } else {
+    const taskId = typeof context === 'string' ? context : (context && context.taskId) ? context.taskId : null;
+    _panelTaskId = taskId;
+    const task = allTasks().find(t => t.id === taskId);
+    document.getElementById('subtask-panel-task-name').textContent = task ? task.name : '';
+    if (context && context.sourceEl) {
+      _panelAnchorEl = context.sourceEl;
+      const rect = context.sourceEl.getBoundingClientRect();
+      _panelAnchorRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom };
+    } else if (context && context.sourceRect) {
+      _panelAnchorRect = context.sourceRect;
+    } else if (taskId) {
+      const btn = document.querySelector(`.btn-subtasks[data-action="view-subtasks"][data-task-id="${taskId}"]`);
+      if (btn) {
+        _panelAnchorEl = btn;
+      }
+    }
+  }
+
   panel.classList.remove('hidden');
   // Position at default only the first time (or if no inline style set yet)
   if (isNew && !panel.style.left) window._setPanelDefaultPos();
-  renderSubtaskPanel();
+  renderSubtaskPanel(context);
   // Draw connector after DOM settles
   requestAnimationFrame(drawConnector);
 }
@@ -1286,15 +1344,21 @@ function openSubtaskPanel(taskId) {
 function closeSubtaskPanel() {
   document.getElementById('subtask-panel').classList.add('hidden');
   _panelTaskId = null;
+  _panelContext = null;
+  _panelAnchorEl = null;
+  _panelAnchorRect = null;
   clearConnector();
 }
 
-function renderSubtaskPanel() {
-  if (!_panelTaskId) return;
-  const subs  = subtasksOf(_panelTaskId);
+function renderSubtaskPanel(context) {
+  const subs = _panelContext && _panelContext.type === 'sprint'
+    ? subtasksForSprint(_panelContext.sprintId)
+    : subtasksOf(_panelTaskId);
+
+  if (!subs) return;
   const done  = subs.filter(s => s.status === 'Done').length;
-  document.getElementById('subtask-panel-count').textContent =
-    subs.length ? `${done}/${subs.length} done` : '';
+  document.getElementById('subtask-panel-count').innerHTML =
+    buildSubtaskSummaryHtml(subs.length, done);
 
   const board = document.getElementById('subtask-board');
   board.innerHTML = '';
@@ -1336,7 +1400,7 @@ function buildSubtaskCard(sub) {
           ${over ? '⚠️ ' : '📅 '}${formatDate(sub.dueDate)}
         </div>` : ''}
       <div class="kcard-actions">
-        <button class="btn btn-secondary btn-icon" data-sub-action="edit-subtask" data-sub-id="${sub.id}" title="Edit">✏️</button>
+        <button class="btn btn-ghost btn-sm" data-sub-action="edit-subtask" data-sub-id="${sub.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-sub-action="delete-subtask" data-sub-id="${sub.id}">Delete</button>
       </div>
     </div>

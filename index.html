@@ -9,8 +9,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
-  <header class="header">
-    <div class="header-inner">
+  <div class="header-shell">
+    <div class="header-hover-zone"></div>
+    <header class="header">
+      <div class="header-inner">
       <h1 class="logo">📋 Daily Task Tracker</h1>
       <div class="header-actions">
         <button class="btn btn-secondary" id="btn-add-epic">+ New Epic</button>
@@ -51,9 +53,10 @@
             <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
           </svg>
         </button>
+        </div>
       </div>
-    </div>
-  </header>
+    </header>
+  </div>
 
   <!-- Epic Creation Modal -->
   <div class="modal-overlay hidden" id="epic-modal">

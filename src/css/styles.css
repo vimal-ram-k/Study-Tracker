@@ -51,12 +51,35 @@ body {
 }
 
 /* ===== Header ===== */
+.header-shell {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 120;
+  pointer-events: none;
+}
+.header-hover-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: auto;
+}
 .header {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: relative;
+  transform: translateY(-100%);
+  opacity: 0;
+  transition: transform .2s ease, opacity .2s ease;
+  pointer-events: auto;
+}
+.header-shell:hover .header,
+.header:hover {
+  transform: translateY(0);
+  opacity: 1;
 }
 .header-inner {
   width: 100%;
@@ -156,7 +179,7 @@ body {
   min-width: 0;
 }
 .stat-card .stat-value { font-size: 22px; font-weight: 700; line-height: 1.1; color: var(--text); }
-.stat-card .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.stat-card .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; text-align: left; }
 
 /* ===== Kanban board ===== */
 .epics-grid {
@@ -259,8 +282,9 @@ body {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px 10px 8px;
+  padding: 10px 10px 42px;
   flex-shrink: 0;
+  position: relative;
   transition: box-shadow .12s, border-color .12s, background .15s;
 }
 .kcard:hover { box-shadow: var(--shadow); border-color: var(--border-strong); }
@@ -287,6 +311,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 4px;
+  padding-right: 14px;
 }
 .kcard-sub {
   font-size: 11px;
@@ -349,7 +374,10 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
 }
 
 /* ===== Drag-and-drop ===== */
@@ -369,21 +397,20 @@ body {
 }
 
 /* ===== Badges ===== */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 99px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--muted);
+.priority-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.7);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.08);
+  position: absolute;
+  top: 8px;
+  right: 8px;
 }
-.badge-high   { }
-.badge-medium { }
-.badge-low    { }
+.priority-high { }
+.priority-medium { }
+.priority-low { }
 .badge-todo       { }
 .badge-inprogress { }
 .badge-done       { }
@@ -674,6 +701,9 @@ body {
   color: var(--text);
 }
 .subtask-panel-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--muted);
   background: var(--surface2);
@@ -798,6 +828,16 @@ body {
 }
 .gv-pane-meta  { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; }
 .gv-pane-stat  { font-size: 11px; color: var(--muted); }
+.gv-pane-progress {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
 
 /* Column row inside each pane */
 .gv-col-row {
