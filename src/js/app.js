@@ -153,6 +153,22 @@ function isOverdue(dueDate, status) {
   return new Date(dueDate + 'T00:00:00') < new Date(new Date().toDateString());
 }
 
+function isTodayWorkTask(task) {
+  return !!task?.todayWork;
+}
+
+function getTodayWorkTasksForEpic(epicId) {
+  return allTasks().filter(task => task.epicId === epicId && isTodayWorkTask(task) && task.status !== 'Done');
+}
+
+function isTodayWorkWarning(task, epic) {
+  if (!task || !epic?.scheduleEnabled || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
+  if (task.status === 'Done' || !isTodayWorkTask(task)) return false;
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return currentMinutes >= parseTimeToMinutes(epic.scheduleEnd);
+}
+
 function esc(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -179,6 +195,14 @@ function getScheduledTasksForEpic(epicId) {
 
 function isScheduleMissed(epic) {
   if (!epic?.scheduleEnabled || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
+
+  const todayTasks = getTodayWorkTasksForEpic(epic.id);
+  if (todayTasks.length) {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return currentMinutes >= parseTimeToMinutes(epic.scheduleEnd);
+  }
+
   const scheduledTasks = getScheduledTasksForEpic(epic.id);
   const incomplete = scheduledTasks.filter(task => task.status !== 'Done');
   if (!scheduledTasks.length || !incomplete.length) return false;
@@ -368,7 +392,7 @@ function buildSprintCard(sprint, today) {
 
   return `
     <div class="kcard kcard-sprint${isCurrent ? ' kcard-sprint--active' : ''}${isSelected ? ' kcard-selected' : ''}"
-         title="Click to filter board by this sprint">
+         title="Click to filter board by this sprint" data-sprint-id="${sprint.id}">
       <div class="kcard-select-area" data-action="select-sprint" data-id="${sprint.id}">
         <div class="kcard-title">${esc(sprint.name)} ${statusTag}</div>
         <div class="sprint-dates">📅 ${sprint.startDate} → ${sprint.endDate}</div>
@@ -408,7 +432,7 @@ function buildStatusColumn(col) {
   } else if (selectedSprintId) {
     emptyMsg = `<div class="col-empty">No ${col.label} tasks in this sprint</div>`;
   } else if (allTasks().length === 0) {
-    emptyMsg = `<div class="col-empty col-empty-hint">👈 Add tasks via an epic</div>`;
+    emptyMsg = '<div class="col-empty"></div>';
   } else {
     emptyMsg = `<div class="col-empty">No tasks here</div>`;
   }
@@ -433,9 +457,10 @@ function buildTaskCard(task) {
   const subCount   = subtasksOf(task.id).length;
   const subDone    = subtasksOf(task.id).filter(s => s.status === 'Done').length;
   const isActive   = _panelTaskId === task.id;
+  const todayWarn  = isTodayWorkWarning(task, epic);
 
   return `
-    <div class="kcard${isActive ? ' kcard--panel-active' : ''}" draggable="true" data-task-id="${task.id}">
+    <div class="kcard${isActive ? ' kcard--panel-active' : ''}${todayWarn ? ' kcard--today-warning' : ''}" draggable="true" data-task-id="${task.id}">
       <div class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</div>
       ${epic ? `<div class="kcard-epic-tag">${esc(epic.name)}</div>` : ''}
       ${inSprint ? `<div class="task-sprint-badge" title="${esc(active.name)}">⚡ ${esc(active.name)}</div>` : ''}
@@ -443,6 +468,7 @@ function buildTaskCard(task) {
         ${priorityBadge(task.priority)}
         ${task.assignee ? `<span class="kcard-assignee">👤 ${esc(task.assignee)}</span>` : ''}
       </div>
+      ${todayWarn ? '<div class="kcard-warning-pill">⚠ Today overdue</div>' : ''}
       ${task.dueDate ? `
         <div class="kcard-due ${over ? 'overdue' : ''}">
           ${over ? '⚠️ ' : '📅 '}${formatDate(task.dueDate)}
@@ -456,6 +482,8 @@ function buildTaskCard(task) {
             ? `<button class="btn btn-secondary btn-icon btn-sprint-remove" data-action="remove-from-sprint" data-task-id="${task.id}" title="Remove from current sprint">✕</button>`
             : `<button class="btn btn-secondary btn-icon btn-sprint-add" data-action="add-to-sprint" data-task-id="${task.id}" title="Add to ${esc(active.name)}">⚡</button>`
           : ''}
+        ${active && !inSprint ? `<button class="btn btn-ghost btn-sm" data-action="tag-to-current-sprint" data-task-id="${task.id}" title="Add to current sprint list">Tag Sprint</button>` : ''}
+        <button class="btn btn-secondary btn-sm btn-today${task.todayWork ? ' active' : ''}" data-action="toggle-today-work" data-task-id="${task.id}" title="${task.todayWork ? 'Remove from today work' : 'Set as today work'}">${task.todayWork ? '★ Today' : '☆ Today'}</button>
         <button class="btn btn-ghost btn-sm" data-action="edit-task" data-task-id="${task.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-action="delete-task" data-task-id="${task.id}">Delete</button>
       </div>
@@ -653,7 +681,8 @@ function buildGvTaskCard(task, options = {}) {
   const subCount = subtasksOf(task.id).length;
   const subDone  = subtasksOf(task.id).filter(s => s.status === 'Done').length;
   const isActive = _panelTaskId === task.id;
-  const missed   = !!options.missed;
+  const epic     = epicById(task.epicId);
+  const missed   = !!options.missed || isTodayWorkWarning(task, epic);
   return `
     <div class="kcard gv-kcard${isActive ? ' kcard--panel-active' : ''}${missed ? ' gv-kcard--missed' : ''}"
          draggable="true" data-task-id="${task.id}" data-epic-id="${task.epicId}">
@@ -1011,7 +1040,14 @@ function handleGridClick(e) {
     const task = allTasks().find(t => t.id === btn.dataset.taskId);
     openTaskModal(task.epicId, task);
   }
-  if (action === 'add-to-sprint') {
+  if (action === 'toggle-today-work') {
+    const task = allTasks().find(t => t.id === btn.dataset.taskId);
+    task.todayWork = !task.todayWork;
+    saveState(); render();
+    showToast(task.todayWork ? 'Marked for today work.' : 'Removed from today work.');
+    return;
+  }
+  if (action === 'add-to-sprint' || action === 'tag-to-current-sprint') {
     const active = currentSprint();
     if (!active) { showToast('No active sprint this week.'); return; }
     const task = allTasks().find(t => t.id === btn.dataset.taskId);
@@ -1130,6 +1166,37 @@ function initDragDrop() {
       card.classList.remove('kcard--dragging');
       _dragTaskId = null;
       _clearOver();
+    });
+  });
+
+  document.querySelectorAll('.kcard-sprint').forEach(sprintCard => {
+    sprintCard.addEventListener('dragenter', e => {
+      e.preventDefault();
+      sprintCard.classList.add('kcard-sprint--drop-target');
+    });
+    sprintCard.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      sprintCard.classList.add('kcard-sprint--drop-target');
+    });
+    sprintCard.addEventListener('dragleave', e => {
+      if (e.relatedTarget && sprintCard.contains(e.relatedTarget)) return;
+      sprintCard.classList.remove('kcard-sprint--drop-target');
+    });
+    sprintCard.addEventListener('drop', e => {
+      e.preventDefault();
+      sprintCard.classList.remove('kcard-sprint--drop-target');
+      const taskId = _dragTaskId || e.dataTransfer.getData('text/plain');
+      if (!taskId) return;
+      const task = allTasks().find(t => t.id === taskId);
+      const sprint = sprintById(sprintCard.dataset.sprintId);
+      if (!task || !sprint) return;
+      task.sprintId = sprint.id;
+      task.updatedAt = new Date().toISOString();
+      _dragTaskId = null;
+      saveState();
+      requestAnimationFrame(() => render());
+      showToast(`Tagged to ${sprint.name}`);
     });
   });
 
@@ -1343,16 +1410,16 @@ function clearConnector() {
   const MIN_W   = 320;
   const MIN_H   = 200;
 
-  // Set default position when first opened (centered, lower half)
+  // Set default position when first opened (middle-right of the viewport)
   function setDefaultPosition() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const w  = Math.min(Math.round(vw * 0.62), vw - 40);
-    const h  = Math.round(vh * 0.48);
+    const w  = Math.min(Math.round(vw * 0.58), vw - 48);
+    const h  = Math.round(vh * 0.64);
     panel.style.width  = w + 'px';
     panel.style.height = h + 'px';
-    panel.style.left   = Math.round((vw - w) / 2) + 'px';
-    panel.style.top    = Math.round(vh - h - 20) + 'px';
+    panel.style.left   = Math.max(20, vw - w - 24) + 'px';
+    panel.style.top    = Math.max(20, Math.round((vh - h) / 2)) + 'px';
   }
 
   // Expose so openSubtaskPanel can call it on first show

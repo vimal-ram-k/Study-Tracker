@@ -395,6 +395,26 @@ body {
   right: 8px;
   bottom: 8px;
   z-index: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn-today {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--surface2);
+  color: var(--muted);
+  border-color: var(--border);
+}
+.btn-today.active {
+  background: #fff7ed;
+  color: var(--danger);
+  border-color: #fda4af;
+}
+[data-theme="dark"] .btn-today.active {
+  background: #2d1512;
+  color: #fda4af;
+  border-color: #7f1d1d;
 }
 
 /* ===== Drag-and-drop ===== */
@@ -601,6 +621,24 @@ body {
 .kcard--panel-active {
   outline: 2px solid var(--border-strong);
   outline-offset: 1px;
+}
+.kcard--today-warning {
+  border-color: #fca5a5 !important;
+  background: rgba(220, 38, 38, 0.08) !important;
+}
+.kcard--today-warning .kcard-title {
+  color: var(--danger);
+}
+.kcard-warning-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
 }
 /* Dot on the card border is drawn by SVG — no pseudo-element needed */
 
@@ -886,7 +924,25 @@ body {
 }
 .gv-pane--missed {
   border-color: var(--danger);
+  background: rgba(220, 38, 38, 0.08);
   box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.25);
+}
+.gv-pane--missed .gv-pane-header,
+.gv-pane--missed .gv-col-header {
+  background: rgba(220, 38, 38, 0.12);
+}
+.gv-pane--missed .gv-pane-title,
+.gv-pane--missed .gv-col-title,
+.gv-pane--missed .gv-pane-stat,
+.gv-pane--missed .gv-pane-progress,
+.gv-pane--missed .gv-pane-schedule,
+.gv-pane--missed .gv-pane-missed {
+  color: var(--danger);
+}
+.gv-pane--missed .gv-pane-schedule,
+.gv-pane--missed .gv-pane-progress {
+  background: rgba(255,255,255,0.8);
+  border-color: rgba(220, 38, 38, 0.25);
 }
 .gv-pane-title {
   font-size: 13px; font-weight: 800;
@@ -966,6 +1022,9 @@ body {
 .gv-kcard--missed {
   border-left: 3px solid var(--danger);
   background: rgba(220, 38, 38, 0.08);
+}
+.gv-kcard--missed .kcard-title {
+  color: var(--danger);
 }
 .gv-missed-pill {
   font-size: 10px;
