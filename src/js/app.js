@@ -31,6 +31,7 @@ let selectedSprintId = null;
 // ─── View mode ───────────────────────────────────────
 let viewMode = 'board';            // 'board' | 'grid'
 let gridSelectedEpics = new Set(); // epic ids shown in grid view
+let sharedGridSprintFilter = '';
 
 function loadState() {
   try {
@@ -158,11 +159,46 @@ function esc(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function parseTimeToMinutes(value) {
+  if (!value) return 0;
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + (minutes || 0);
+}
+
+function formatTimeLabel(epic) {
+  if (!epic?.scheduleEnabled || !epic?.scheduleStart || !epic?.scheduleEnd) return '';
+  const label = epic.scheduleLabel ? `${epic.scheduleLabel} ` : '';
+  return `${label}${epic.scheduleStart}–${epic.scheduleEnd}`;
+}
+
+function getScheduledTasksForEpic(epicId) {
+  const epic = epicById(epicId);
+  if (!epic || !Array.isArray(epic.scheduledTaskIds)) return [];
+  return allTasks().filter(task => task.epicId === epicId && epic.scheduledTaskIds.includes(task.id));
+}
+
+function isScheduleMissed(epic) {
+  if (!epic?.scheduleEnabled || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
+  const scheduledTasks = getScheduledTasksForEpic(epic.id);
+  const incomplete = scheduledTasks.filter(task => task.status !== 'Done');
+  if (!scheduledTasks.length || !incomplete.length) return false;
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return currentMinutes >= parseTimeToMinutes(epic.scheduleEnd);
+}
+
 function buildSubtaskSummaryHtml(total, done) {
   return `⊞${total ? ` <span class="subtask-pill">${done}/${total}</span>` : ''}`;
 }
 
 // ─── Summary bar ─────────────────────────────────────
+function renderHeaderSprintBadge() {
+  const badge = document.getElementById('header-sprint-badge');
+  if (!badge) return;
+  const active = currentSprint();
+  badge.textContent = active ? active.name : 'No current sprint';
+}
+
 function renderSummary() {
   let tasks = allTasks();
   if (selectedSprintId) tasks = tasks.filter(t => t.sprintId === selectedSprintId);
@@ -429,6 +465,7 @@ function buildTaskCard(task) {
 
 // ─── Full re-render ───────────────────────────────────
 function render() {
+  renderHeaderSprintBadge();
   const summaryBar = document.getElementById('summary-bar');
   if (viewMode === 'grid') {
     summaryBar.style.display = 'none';
@@ -454,6 +491,7 @@ const GV_COLS = COLUMNS.filter(c => c.status);
 // ── Picker bar ──────────────────────────────────────
 function renderGridPicker() {
   const chips = document.getElementById('gv-picker-chips');
+  const sharedSelect = document.getElementById('gv-shared-sprint-select');
   chips.innerHTML = '';
   state.epics.forEach(epic => {
     const on  = gridSelectedEpics.has(epic.id);
@@ -469,6 +507,16 @@ function renderGridPicker() {
     });
     chips.appendChild(btn);
   });
+
+  sharedSelect.innerHTML = '<option value="">All sprints</option>';
+  allSprints().slice().sort((a, b) => b.startDate.localeCompare(a.startDate)).forEach(sprint => {
+    const option = document.createElement('option');
+    option.value = sprint.id;
+    option.textContent = sprint.name;
+    if (sharedGridSprintFilter === sprint.id) option.selected = true;
+    sharedSelect.appendChild(option);
+  });
+  sharedSelect.value = sharedGridSprintFilter;
 }
 
 // ── Main grid renderer ──────────────────────────────
@@ -508,8 +556,14 @@ function buildGvPane(epic, rowEl) {
   pane.className   = 'gv-pane';
   pane.dataset.epicId = epic.id;
 
-  const tasks   = allTasks().filter(t => t.epicId === epic.id);
+  const sprintScope = epic.sprintFilterId || sharedGridSprintFilter || '';
+  const tasks   = allTasks().filter(t => t.epicId === epic.id && (!sprintScope || t.sprintId === sprintScope));
   const done    = tasks.filter(t => t.status === 'Done').length;
+  const missed  = isScheduleMissed(epic);
+  const timeLabel = formatTimeLabel(epic);
+  const scheduledTasks = getScheduledTasksForEpic(epic.id);
+
+  if (missed) pane.classList.add('gv-pane--missed');
 
   // Compact pane header: epic name + progress + add-task button
   const hdr = document.createElement('div');
@@ -518,14 +572,31 @@ function buildGvPane(epic, rowEl) {
     <div class="gv-pane-title" title="${esc(epic.name)}">${esc(epic.name)}</div>
     <div class="gv-pane-meta">
       ${priorityBadge(epic.priority)}
+      ${timeLabel ? `<span class="gv-pane-schedule">⏰ ${esc(timeLabel)}</span>` : ''}
+      ${scheduledTasks.length ? `<span class="gv-pane-schedule gv-pane-schedule--task">${scheduledTasks.length} scheduled</span>` : ''}
+      ${missed ? '<span class="gv-pane-missed">Missed</span>' : ''}
+      <label class="gv-pane-filter">
+        <span>Sprint</span>
+        <select data-action="set-sprint-filter" data-epic-id="${epic.id}">
+          <option value="">All</option>
+          ${allSprints().slice().sort((a, b) => b.startDate.localeCompare(a.startDate)).map(sprint => `<option value="${sprint.id}" ${epic.sprintFilterId === sprint.id ? 'selected' : ''}>${esc(sprint.name)}</option>`).join('')}
+        </select>
+      </label>
       <span class="gv-pane-stat">${tasks.length} task${tasks.length !== 1 ? 's' : ''}</span>
       <span class="gv-pane-progress">${done} of ${tasks.length}</span>
       <button class="btn btn-secondary btn-sm" data-action="add-task" data-epic-id="${epic.id}">+ Task</button>
     </div>
   `;
   hdr.addEventListener('click', e => {
-    const b = e.target.closest('[data-action="add-task"]');
-    if (b) openTaskModal(b.dataset.epicId);
+    const b = e.target.closest('[data-action]');
+    if (!b) return;
+    if (b.dataset.action === 'add-task') openTaskModal(b.dataset.epicId);
+  });
+  hdr.querySelector('select[data-action="set-sprint-filter"]')?.addEventListener('change', e => {
+    const epicToUpdate = state.epics.find(entry => entry.id === e.target.dataset.epicId);
+    if (!epicToUpdate) return;
+    epicToUpdate.sprintFilterId = e.target.value || '';
+    saveState(); render();
   });
   pane.appendChild(hdr);
 
@@ -546,7 +617,9 @@ function buildGvPane(epic, rowEl) {
            data-epic-id="${epic.id}" data-status="${col.status}">
         ${colTasks.length === 0
           ? '<div class="col-empty" style="font-size:11px">Empty</div>'
-          : colTasks.map(t => buildGvTaskCard(t)).join('')}
+          : colTasks.map(t => buildGvTaskCard(t, {
+              missed: isScheduleMissed(epic) && getScheduledTasksForEpic(epic.id).some(task => task.id === t.id)
+            })).join('')}
       </div>
     `;
     colRow.appendChild(colEl);
@@ -575,15 +648,17 @@ function buildGvPane(epic, rowEl) {
 }
 
 // ── Task card inside grid view ───────────────────────
-function buildGvTaskCard(task) {
+function buildGvTaskCard(task, options = {}) {
   const over     = isOverdue(task.dueDate, task.status);
   const subCount = subtasksOf(task.id).length;
   const subDone  = subtasksOf(task.id).filter(s => s.status === 'Done').length;
   const isActive = _panelTaskId === task.id;
+  const missed   = !!options.missed;
   return `
-    <div class="kcard gv-kcard${isActive ? ' kcard--panel-active' : ''}"
+    <div class="kcard gv-kcard${isActive ? ' kcard--panel-active' : ''}${missed ? ' gv-kcard--missed' : ''}"
          draggable="true" data-task-id="${task.id}" data-epic-id="${task.epicId}">
       <div class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</div>
+      ${missed ? '<div class="gv-missed-pill">Missed schedule</div>' : ''}
       <div class="kcard-meta">
         ${priorityBadge(task.priority)}
         ${task.assignee ? `<span class="kcard-assignee">👤 ${esc(task.assignee)}</span>` : ''}
@@ -682,9 +757,44 @@ document.getElementById('gv-clear-all').addEventListener('click', () => {
   gridSelectedEpics.clear();
   render();
 });
+document.getElementById('gv-shared-sprint-select').addEventListener('change', (e) => {
+  sharedGridSprintFilter = e.target.value;
+  render();
+});
+document.getElementById('gv-shared-sprint-select').addEventListener('change', (e) => {
+  sharedGridSprintFilter = e.target.value;
+  render();
+});
 
 // ─── Epic Modal ───────────────────────────────────────
 let epicEditId = null;
+
+function populateEpicScheduleTaskSelect(epic) {
+  const select = document.getElementById('epic-scheduled-task-ids');
+  const selectedIds = epic?.scheduledTaskIds || [];
+  const tasks = allTasks()
+    .filter(task => !epic || task.epicId === epic.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  select.innerHTML = '';
+  if (!tasks.length) {
+    const option = document.createElement('option');
+    option.textContent = 'No tasks yet';
+    option.value = '';
+    select.appendChild(option);
+    select.disabled = true;
+    return;
+  }
+
+  tasks.forEach(task => {
+    const option = document.createElement('option');
+    option.value = task.id;
+    option.textContent = `${task.name} (${task.status})`;
+    if (selectedIds.includes(task.id)) option.selected = true;
+    select.appendChild(option);
+  });
+  select.disabled = false;
+}
 
 function openEpicModal(epic = null) {
   epicEditId = epic ? epic.id : null;
@@ -692,6 +802,11 @@ function openEpicModal(epic = null) {
   document.getElementById('epic-name').value     = epic ? epic.name     : '';
   document.getElementById('epic-desc').value     = epic ? epic.desc     : '';
   document.getElementById('epic-priority').value = epic ? epic.priority : 'Medium';
+  document.getElementById('epic-schedule-enabled').checked = !!(epic?.scheduleEnabled);
+  document.getElementById('epic-schedule-label').value = epic ? (epic.scheduleLabel || '') : '';
+  document.getElementById('epic-schedule-start').value = epic ? (epic.scheduleStart || '') : '';
+  document.getElementById('epic-schedule-end').value = epic ? (epic.scheduleEnd || '') : '';
+  populateEpicScheduleTaskSelect(epic);
   document.getElementById('epic-modal').classList.remove('hidden');
   document.getElementById('epic-name').focus();
 }
@@ -710,17 +825,29 @@ document.getElementById('epic-save').addEventListener('click', () => {
   const name = document.getElementById('epic-name').value.trim();
   if (!name) { showToast('Epic name is required.'); return; }
 
+  const scheduleSelect = document.getElementById('epic-scheduled-task-ids');
+  const scheduledTaskIds = Array.from(scheduleSelect.selectedOptions).map(option => option.value).filter(Boolean);
+  const schedulePayload = {
+    scheduleEnabled: document.getElementById('epic-schedule-enabled').checked,
+    scheduleLabel: document.getElementById('epic-schedule-label').value.trim(),
+    scheduleStart: document.getElementById('epic-schedule-start').value,
+    scheduleEnd: document.getElementById('epic-schedule-end').value,
+    scheduledTaskIds,
+  };
+
   if (epicEditId) {
     const epic = state.epics.find(e => e.id === epicEditId);
     epic.name     = name;
     epic.desc     = document.getElementById('epic-desc').value.trim();
     epic.priority = document.getElementById('epic-priority').value;
+    Object.assign(epic, schedulePayload);
   } else {
     state.epics.push({
       id: uid(), name,
       desc:     document.getElementById('epic-desc').value.trim(),
       priority: document.getElementById('epic-priority').value,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...schedulePayload
     });
   }
   saveState(); closeEpicModal(); render();

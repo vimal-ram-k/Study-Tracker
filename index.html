@@ -15,6 +15,7 @@
       <div class="header-inner">
       <h1 class="logo">📋 Daily Task Tracker</h1>
       <div class="header-actions">
+        <div class="header-sprint-badge" id="header-sprint-badge" title="Current sprint"></div>
         <button class="btn btn-secondary" id="btn-add-epic">+ New Epic</button>
         <button class="btn btn-secondary" id="btn-grid-view" title="Switch to grid view">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -74,6 +75,32 @@
           <option value="Medium" selected>🟡 Medium</option>
           <option value="Low">🟢 Low</option>
         </select>
+      </label>
+      <label class="form-label">Schedule (optional)
+        <div class="form-row">
+          <label class="form-label form-label--inline">
+            <span>Enable</span>
+            <input type="checkbox" class="form-input" id="epic-schedule-enabled" />
+          </label>
+          <label class="form-label form-label--inline">
+            <span>Label</span>
+            <input type="text" class="form-input" id="epic-schedule-label" placeholder="Morning" maxlength="30" />
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="form-label form-label--inline">
+            <span>Start time</span>
+            <input type="time" class="form-input" id="epic-schedule-start" />
+          </label>
+          <label class="form-label form-label--inline">
+            <span>End time</span>
+            <input type="time" class="form-input" id="epic-schedule-end" />
+          </label>
+        </div>
+        <label class="form-label form-label--inline">
+          <span>Scheduled tasks</span>
+          <select class="form-input" id="epic-scheduled-task-ids" multiple size="5"></select>
+        </label>
       </label>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="epic-cancel">Cancel</button>
@@ -219,6 +246,12 @@
     <div class="gv-picker hidden" id="gv-picker">
       <span class="gv-picker-label">Select epics <span class="gv-picker-hint">(2 per row)</span>:</span>
       <div class="gv-picker-chips" id="gv-picker-chips"></div>
+      <label class="gv-picker-select">
+        <span>Shared Sprint</span>
+        <select id="gv-shared-sprint-select" class="form-input form-input--compact">
+          <option value="">All sprints</option>
+        </select>
+      </label>
       <button class="btn btn-ghost btn-sm" id="gv-select-all">All</button>
       <button class="btn btn-ghost btn-sm" id="gv-clear-all">None</button>
     </div>
