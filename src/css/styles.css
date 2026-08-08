@@ -1035,6 +1035,26 @@ body {
   letter-spacing: .3px;
 }
 
+/* ===== Excel reconnect banner ===== */
+.xl-reconnect-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-top: 2px solid var(--border-strong);
+  font-size: 13px;
+  color: var(--text);
+  box-shadow: 0 -2px 12px rgba(0,0,0,.12);
+}
+.xl-reconnect-banner span { flex: 1; }
+
+
 /* ===== Responsive ===== */
 
 @media (max-width: 1100px) {
