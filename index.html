@@ -115,11 +115,12 @@
       <h2 class="modal-title" id="task-modal-title">Add Task</h2>
       <input type="hidden" id="task-epic-id" />
       <input type="hidden" id="task-edit-id" />
-      <label class="form-label">Task Name *
-        <input type="text" class="form-input" id="task-name" placeholder="e.g. Design login page" maxlength="120" />
+      <label class="form-label" id="task-name-label">Task Name *
+        <textarea class="form-input form-textarea task-name-area" id="task-name" placeholder="One task per line — e.g.&#10;Design login page&#10;Write unit tests&#10;Review PR" rows="3"></textarea>
+        <span class="task-bulk-hint" id="task-bulk-hint"></span>
       </label>
-      <label class="form-label">Description
-        <textarea class="form-input form-textarea" id="task-desc" placeholder="Details…" rows="3"></textarea>
+      <label class="form-label" id="task-desc-label">Description <span class="task-desc-note">(applied to all tasks)</span>
+        <textarea class="form-input form-textarea" id="task-desc" placeholder="Details…" rows="2"></textarea>
       </label>
       <div class="form-row">
         <label class="form-label">Assignee

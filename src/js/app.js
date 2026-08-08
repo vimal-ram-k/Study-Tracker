@@ -33,6 +33,40 @@ let viewMode = 'board';            // 'board' | 'grid'
 let gridSelectedEpics = new Set(); // epic ids shown in grid view
 let sharedGridSprintFilter = '';
 
+// ─── Collapsed/expanded card state ───────────────────
+const _expandedCards = new Set();
+
+function _toggleCardExpand(id, cardEl) {
+  if (_expandedCards.has(id)) {
+    _expandedCards.delete(id);
+    cardEl.classList.remove('kcard--expanded');
+  } else {
+    _expandedCards.add(id);
+    cardEl.classList.add('kcard--expanded');
+  }
+}
+
+// ─── Multi-select task state ──────────────────────────
+// Ctrl/Cmd+click on a task title row adds it to this set.
+// Drag on any selected card moves all selected tasks.
+const _selectedTaskIds = new Set();
+
+function _taskSelectToggle(taskId, cardEl) {
+  if (_selectedTaskIds.has(taskId)) {
+    _selectedTaskIds.delete(taskId);
+    cardEl.classList.remove('kcard--multi-selected');
+  } else {
+    _selectedTaskIds.add(taskId);
+    cardEl.classList.add('kcard--multi-selected');
+  }
+}
+
+function _clearMultiSelect() {
+  _selectedTaskIds.clear();
+  document.querySelectorAll('.kcard--multi-selected')
+    .forEach(el => el.classList.remove('kcard--multi-selected'));
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -81,6 +115,13 @@ function sprintName(monday) {
 function currentSprint() {
   const today = toISO(new Date());
   return allSprints().find(s => today >= s.startDate && today <= s.endDate) || null;
+}
+
+function nextSprint() {
+  const today = toISO(new Date());
+  return allSprints()
+    .filter(s => s.startDate > today)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] || null;
 }
 
 function ensureCurrentSprint() {
@@ -162,7 +203,7 @@ function getTodayWorkTasksForEpic(epicId) {
 }
 
 function isTodayWorkWarning(task, epic) {
-  if (!task || !epic?.scheduleEnabled || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
+  if (!task || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
   if (task.status === 'Done' || !isTodayWorkTask(task)) return false;
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -182,7 +223,7 @@ function parseTimeToMinutes(value) {
 }
 
 function formatTimeLabel(epic) {
-  if (!epic?.scheduleEnabled || !epic?.scheduleStart || !epic?.scheduleEnd) return '';
+  if (!epic?.scheduleStart || !epic?.scheduleEnd) return '';
   const label = epic.scheduleLabel ? `${epic.scheduleLabel} ` : '';
   return `${label}${epic.scheduleStart}–${epic.scheduleEnd}`;
 }
@@ -194,7 +235,7 @@ function getScheduledTasksForEpic(epicId) {
 }
 
 function isScheduleMissed(epic) {
-  if (!epic?.scheduleEnabled || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
+  if (!epic?.scheduleStart || !epic?.scheduleEnd) return false;
 
   const todayTasks = getTodayWorkTasksForEpic(epic.id);
   if (todayTasks.length) {
@@ -300,20 +341,21 @@ function buildEpicColumn() {
 
   const epics = state.epics;
 
-  col.innerHTML = `
-    <div class="col-header" style="--col-color:#7c5cd8">
-      <span class="col-title">Epic</span>
-      <span class="col-count">${epics.length}</span>
-    </div>
-    <div class="col-body" id="col-epic">
-      ${epics.length === 0
-        ? '<div class="col-empty">No epics yet.<br>Click + New Epic to start.</div>'
-        : epics.map(e => buildEpicCard(e)).join('')}
-    </div>
-    <div class="col-footer">
-      <button class="btn-col-add" data-action="add-epic">+ New Epic</button>
-    </div>
-  `;
+  const epicHdr = document.createElement('div');
+  epicHdr.className = 'col-header';
+  epicHdr.style.setProperty('--col-color', '#7c5cd8');
+  epicHdr.innerHTML = `<span class="col-title">Epic</span><span class="col-count">${epics.length}</span>`;
+  const epicBody = document.createElement('div');
+  epicBody.className = 'col-body'; epicBody.id = 'col-epic';
+  if (epics.length === 0) {
+    epicBody.innerHTML = '<div class="col-empty">No epics yet.<br>Click + New Epic to start.</div>';
+  } else {
+    epics.forEach(e => epicBody.appendChild(buildEpicCard(e)));
+  }
+  const epicFooter = document.createElement('div');
+  epicFooter.className = 'col-footer';
+  epicFooter.innerHTML = '<button class="btn-col-add" data-action="add-epic">+ New Epic</button>';
+  col.appendChild(epicHdr); col.appendChild(epicBody); col.appendChild(epicFooter);
   return col;
 }
 
@@ -323,12 +365,19 @@ function buildEpicCard(epic) {
   const done     = tasks.filter(t => t.status === 'Done').length;
   const pct      = total ? Math.round((done / total) * 100) : 0;
   const selected = selectedEpicId === epic.id;
+  const expanded = _expandedCards.has(epic.id);
 
-  return `
-    <div class="kcard kcard-epic${selected ? ' kcard-selected' : ''}"
-         data-epic-id="${epic.id}" title="Click to filter board by this epic">
+  const el = document.createElement('div');
+  el.className = `kcard kcard-epic${selected ? ' kcard-selected' : ''}${expanded ? ' kcard--expanded' : ''}`;
+  el.dataset.epicId = epic.id;
+  el.title = 'Click name to expand';
+  el.innerHTML = `
+    <div class="kcard-title-row" data-action="expand-card" data-id="${epic.id}">
+      <span class="kcard-chevron">${expanded ? '▾' : '▸'}</span>
+      <span class="kcard-title" title="${esc(epic.name)}">${esc(epic.name)}</span>
+    </div>
+    <div class="kcard-detail">
       <div class="kcard-select-area" data-action="select-epic" data-epic-id="${epic.id}">
-        <div class="kcard-title" title="${esc(epic.name)}">${esc(epic.name)}</div>
         ${epic.desc ? `<div class="kcard-sub">${esc(epic.desc)}</div>` : ''}
         <div class="kcard-meta">
           ${priorityBadge(epic.priority)}
@@ -346,6 +395,12 @@ function buildEpicCard(epic) {
       </div>
     </div>
   `;
+  el.querySelector('[data-action="expand-card"]').addEventListener('click', e => {
+    e.stopPropagation();
+    _toggleCardExpand(epic.id, el);
+    el.querySelector('.kcard-chevron').textContent = _expandedCards.has(epic.id) ? '▾' : '▸';
+  });
+  return el;
 }
 
 // ── Sprint column ────────────────────────────────────
@@ -358,20 +413,20 @@ function buildSprintColumn() {
   // Mark current / upcoming / past
   const today = toISO(new Date());
 
-  el.innerHTML = `
-    <div class="col-header col-header-sprint">
-      <span class="col-title">Sprint</span>
-      <span class="col-count">${sprints.length}</span>
-    </div>
-    <div class="col-body" id="col-sprint">
-      ${sprints.length === 0
-        ? '<div class="col-empty">No sprints yet</div>'
-        : sprints.map(s => buildSprintCard(s, today)).join('')}
-    </div>
-    <div class="col-footer">
-      <button class="btn-col-add" data-action="add-sprint">+ New Sprint</button>
-    </div>
-  `;
+  const hdr = document.createElement('div');
+  hdr.className = 'col-header col-header-sprint';
+  hdr.innerHTML = `<span class="col-title">Sprint</span><span class="col-count">${sprints.length}</span>`;
+  const body = document.createElement('div');
+  body.className = 'col-body'; body.id = 'col-sprint';
+  if (sprints.length === 0) {
+    body.innerHTML = '<div class="col-empty">No sprints yet</div>';
+  } else {
+    sprints.forEach(s => body.appendChild(buildSprintCard(s, today)));
+  }
+  const footer = document.createElement('div');
+  footer.className = 'col-footer';
+  footer.innerHTML = '<button class="btn-col-add" data-action="add-sprint">+ New Sprint</button>';
+  el.appendChild(hdr); el.appendChild(body); el.appendChild(footer);
   return el;
 }
 
@@ -387,14 +442,19 @@ function buildSprintCard(sprint, today) {
   const statusTag  = isCurrent  ? '<span class="sprint-tag sprint-tag--active">Active</span>'
                    : isUpcoming ? '<span class="sprint-tag sprint-tag--upcoming">Upcoming</span>'
                    :              '<span class="sprint-tag sprint-tag--past">Past</span>';
-
   const isSelected = selectedSprintId === sprint.id;
+  const expanded   = _expandedCards.has(sprint.id);
 
-  return `
-    <div class="kcard kcard-sprint${isCurrent ? ' kcard-sprint--active' : ''}${isSelected ? ' kcard-selected' : ''}"
-         title="Click to filter board by this sprint" data-sprint-id="${sprint.id}">
+  const el = document.createElement('div');
+  el.className = `kcard kcard-sprint${isCurrent ? ' kcard-sprint--active' : ''}${isSelected ? ' kcard-selected' : ''}${expanded ? ' kcard--expanded' : ''}`;
+  el.dataset.sprintId = sprint.id;
+  el.innerHTML = `
+    <div class="kcard-title-row" data-action="expand-card" data-id="${sprint.id}">
+      <span class="kcard-chevron">${expanded ? '▾' : '▸'}</span>
+      <span class="kcard-title">${esc(sprint.name)} ${statusTag}</span>
+    </div>
+    <div class="kcard-detail">
       <div class="kcard-select-area" data-action="select-sprint" data-id="${sprint.id}">
-        <div class="kcard-title">${esc(sprint.name)} ${statusTag}</div>
         <div class="sprint-dates">📅 ${sprint.startDate} → ${sprint.endDate}</div>
         ${sprint.goal ? `<div class="kcard-sub">${esc(sprint.goal)}</div>` : ''}
         <div class="kcard-meta">
@@ -415,6 +475,12 @@ function buildSprintCard(sprint, today) {
       </div>
     </div>
   `;
+  el.querySelector('[data-action="expand-card"]').addEventListener('click', e => {
+    e.stopPropagation();
+    _toggleCardExpand(sprint.id, el);
+    el.querySelector('.kcard-chevron').textContent = _expandedCards.has(sprint.id) ? '▾' : '▸';
+  });
+  return el;
 }
 
 // ── Status column ────────────────────────────────────
@@ -437,58 +503,92 @@ function buildStatusColumn(col) {
     emptyMsg = `<div class="col-empty">No tasks here</div>`;
   }
 
-  el.innerHTML = `
-    <div class="col-header" style="--col-color:${col.color}">
-      <span class="col-title">${col.label}</span>
-      <span class="col-count">${tasks.length}</span>
-    </div>
-    <div class="col-body" id="col-${col.id}">
-      ${tasks.length === 0 ? emptyMsg : tasks.map(t => buildTaskCard(t)).join('')}
-    </div>
-  `;
+  const colHdr = document.createElement('div');
+  colHdr.className = 'col-header';
+  colHdr.style.setProperty('--col-color', col.color);
+  colHdr.innerHTML = `<span class="col-title">${col.label}</span><span class="col-count">${tasks.length}</span>`;
+  const colBody = document.createElement('div');
+  colBody.className = 'col-body'; colBody.id = `col-${col.id}`;
+  if (tasks.length === 0) {
+    colBody.innerHTML = emptyMsg;
+  } else {
+    tasks.forEach(t => colBody.appendChild(buildTaskCard(t)));
+  }
+  el.appendChild(colHdr); el.appendChild(colBody);
   return el;
 }
 
 function buildTaskCard(task) {
-  const over       = isOverdue(task.dueDate, task.status);
-  const epic       = epicById(task.epicId);
-  const active     = currentSprint();
-  const inSprint   = active && task.sprintId === active.id;
-  const subCount   = subtasksOf(task.id).length;
-  const subDone    = subtasksOf(task.id).filter(s => s.status === 'Done').length;
-  const isActive   = _panelTaskId === task.id;
-  const todayWarn  = isTodayWorkWarning(task, epic);
+  const over        = isOverdue(task.dueDate, task.status);
+  const epic        = epicById(task.epicId);
+  const active      = currentSprint();
+  const next        = nextSprint();
+  const inSprint    = active && task.sprintId === active.id;
+  const inNext      = next   && task.sprintId === next.id;
+  const assignedSpr = task.sprintId ? sprintById(task.sprintId) : null;
+  const subCount    = subtasksOf(task.id).length;
+  const subDone     = subtasksOf(task.id).filter(s => s.status === 'Done').length;
+  const isActive    = _panelTaskId === task.id;
+  const todayWarn   = isTodayWorkWarning(task, epic);
+  const expanded    = _expandedCards.has(task.id);
 
-  return `
-    <div class="kcard${isActive ? ' kcard--panel-active' : ''}${todayWarn ? ' kcard--today-warning' : ''}" draggable="true" data-task-id="${task.id}">
-      <div class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</div>
+  const sprintBadge = assignedSpr
+    ? `<div class="task-sprint-badge${inNext ? ' task-sprint-badge--next' : ''}" title="${esc(assignedSpr.name)}">${inNext ? '🗓' : '⚡'} ${esc(assignedSpr.name)}</div>`
+    : '';
+
+  let sprintBtn = '';
+  if (inSprint) {
+    sprintBtn = `<button class="btn btn-secondary btn-sm btn-sprint-remove" data-action="remove-from-sprint" data-task-id="${task.id}" title="Remove from sprint">✕ Sprint</button>`;
+  } else if (inNext) {
+    sprintBtn = `<button class="btn btn-secondary btn-sm btn-sprint-remove" data-action="remove-from-sprint" data-task-id="${task.id}" title="Remove from ${esc(next.name)}">✕ Next</button>`;
+  } else {
+    const addCurrent = active ? `<button class="btn btn-ghost btn-sm btn-sprint-add" data-action="add-to-sprint" data-task-id="${task.id}" title="Add to ${esc(active.name)}">⚡ Sprint</button>` : '';
+    const addNext    = next   ? `<button class="btn btn-ghost btn-sm btn-sprint-next" data-action="schedule-to-next-sprint" data-task-id="${task.id}" title="Schedule to ${esc(next.name)}">🗓 Next</button>` : '';
+    sprintBtn = addCurrent + addNext;
+  }
+
+  const el = document.createElement('div');
+  el.className = `kcard${isActive ? ' kcard--panel-active' : ''}${todayWarn ? ' kcard--today-warning' : ''}${expanded ? ' kcard--expanded' : ''}`;
+  el.draggable = true;
+  el.dataset.taskId = task.id;
+  el.innerHTML = `
+    <div class="kcard-title-row" data-action="expand-card" data-id="${task.id}">
+      <span class="kcard-chevron">${expanded ? '▾' : '▸'}</span>
+      <span class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</span>
+    </div>
+    <div class="kcard-detail">
       ${epic ? `<div class="kcard-epic-tag">${esc(epic.name)}</div>` : ''}
-      ${inSprint ? `<div class="task-sprint-badge" title="${esc(active.name)}">⚡ ${esc(active.name)}</div>` : ''}
+      ${sprintBadge}
       <div class="kcard-meta">
         ${priorityBadge(task.priority)}
         ${task.assignee ? `<span class="kcard-assignee">👤 ${esc(task.assignee)}</span>` : ''}
       </div>
       ${todayWarn ? '<div class="kcard-warning-pill">⚠ Today overdue</div>' : ''}
-      ${task.dueDate ? `
-        <div class="kcard-due ${over ? 'overdue' : ''}">
-          ${over ? '⚠️ ' : '📅 '}${formatDate(task.dueDate)}
-        </div>` : ''}
+      ${task.dueDate ? `<div class="kcard-due ${over ? 'overdue' : ''}">${over ? '⚠️ ' : '📅 '}${formatDate(task.dueDate)}</div>` : ''}
       <button class="btn-subtasks" data-action="view-subtasks" data-task-id="${task.id}">
         ${buildSubtaskSummaryHtml(subCount, subDone)}
       </button>
       <div class="kcard-actions">
-        ${active
-          ? inSprint
-            ? `<button class="btn btn-secondary btn-icon btn-sprint-remove" data-action="remove-from-sprint" data-task-id="${task.id}" title="Remove from current sprint">✕</button>`
-            : `<button class="btn btn-secondary btn-icon btn-sprint-add" data-action="add-to-sprint" data-task-id="${task.id}" title="Add to ${esc(active.name)}">⚡</button>`
-          : ''}
-        ${active && !inSprint ? `<button class="btn btn-ghost btn-sm" data-action="tag-to-current-sprint" data-task-id="${task.id}" title="Add to current sprint list">Tag Sprint</button>` : ''}
+        ${sprintBtn}
         <button class="btn btn-secondary btn-sm btn-today${task.todayWork ? ' active' : ''}" data-action="toggle-today-work" data-task-id="${task.id}" title="${task.todayWork ? 'Remove from today work' : 'Set as today work'}">${task.todayWork ? '★ Today' : '☆ Today'}</button>
         <button class="btn btn-ghost btn-sm" data-action="edit-task" data-task-id="${task.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-action="delete-task" data-task-id="${task.id}">Delete</button>
       </div>
     </div>
   `;
+  el.querySelector('[data-action="expand-card"]').addEventListener('click', e => {
+    e.stopPropagation();
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl/Cmd+click — toggle multi-select
+      _taskSelectToggle(task.id, el);
+    } else {
+      // Plain click — expand/collapse
+      _clearMultiSelect();
+      _toggleCardExpand(task.id, el);
+      el.querySelector('.kcard-chevron').textContent = _expandedCards.has(task.id) ? '▾' : '▸';
+    }
+  });
+  return el;
 }
 
 // ─── Full re-render ───────────────────────────────────
@@ -613,12 +713,27 @@ function buildGvPane(epic, rowEl) {
       <span class="gv-pane-stat">${tasks.length} task${tasks.length !== 1 ? 's' : ''}</span>
       <span class="gv-pane-progress">${done} of ${tasks.length}</span>
       <button class="btn btn-secondary btn-sm" data-action="add-task" data-epic-id="${epic.id}">+ Task</button>
+      <button class="btn btn-secondary btn-sm" data-action="toggle-graph" data-epic-id="${epic.id}" title="Toggle performance graph">📊</button>
     </div>
   `;
+  // Graph panel (hidden by default)
+  const chartPanel = document.createElement('div');
+  chartPanel.className = 'gv-chart-panel gv-chart-panel--hidden';
+  chartPanel.dataset.epicId = epic.id;
+
   hdr.addEventListener('click', e => {
     const b = e.target.closest('[data-action]');
     if (!b) return;
     if (b.dataset.action === 'add-task') openTaskModal(b.dataset.epicId);
+    if (b.dataset.action === 'toggle-graph') {
+      const open = chartPanel.classList.toggle('gv-chart-panel--hidden');
+      // open === true means it just became hidden (toggle returned the new state)
+      const showing = !open;
+      b.classList.toggle('active', showing);
+      colRow.classList.toggle('gv-col-row--hidden', showing);
+      chartPanel.classList.toggle('gv-chart-panel--full', showing);
+      if (showing) _renderEpicChart(chartPanel, epic);
+    }
   });
   hdr.querySelector('select[data-action="set-sprint-filter"]')?.addEventListener('change', e => {
     const epicToUpdate = state.epics.find(entry => entry.id === e.target.dataset.epicId);
@@ -627,6 +742,7 @@ function buildGvPane(epic, rowEl) {
     saveState(); render();
   });
   pane.appendChild(hdr);
+  pane.appendChild(chartPanel);
 
   // Status columns
   const colRow = document.createElement('div');
@@ -636,20 +752,25 @@ function buildGvPane(epic, rowEl) {
     const colTasks = tasks.filter(t => t.status === col.status);
     const colEl    = document.createElement('div');
     colEl.className = 'gv-col';
-    colEl.innerHTML = `
-      <div class="gv-col-header">
-        <span class="gv-col-title">${col.label}</span>
-        <span class="col-count">${colTasks.length}</span>
-      </div>
-      <div class="gv-col-body" id="gv-col-${epic.id}-${col.id}"
-           data-epic-id="${epic.id}" data-status="${col.status}">
-        ${colTasks.length === 0
-          ? '<div class="col-empty" style="font-size:11px">Empty</div>'
-          : colTasks.map(t => buildGvTaskCard(t, {
-              missed: isScheduleMissed(epic) && getScheduledTasksForEpic(epic.id).some(task => task.id === t.id)
-            })).join('')}
-      </div>
-    `;
+    const gvHdr = document.createElement('div');
+    gvHdr.className = 'gv-col-header';
+    gvHdr.innerHTML = `<span class="gv-col-title">${col.label}</span><span class="col-count">${colTasks.length}</span>`;
+    const gvBody = document.createElement('div');
+    gvBody.className = 'gv-col-body';
+    gvBody.id = `gv-col-${epic.id}-${col.id}`;
+    gvBody.dataset.epicId = epic.id;
+    gvBody.dataset.status = col.status;
+    if (colTasks.length === 0) {
+      gvBody.innerHTML = '<div class="col-empty" style="font-size:11px">Empty</div>';
+    } else {
+      const epicMissed = isScheduleMissed(epic);
+      const scheduledIds = getScheduledTasksForEpic(epic.id).map(t => t.id);
+      colTasks.forEach(t => gvBody.appendChild(buildGvTaskCard(t, {
+        missed: epicMissed && scheduledIds.includes(t.id)
+      })));
+    }
+    colEl.appendChild(gvHdr);
+    colEl.appendChild(gvBody);
     colRow.appendChild(colEl);
   });
 
@@ -675,6 +796,146 @@ function buildGvPane(epic, rowEl) {
   rowEl.appendChild(pane);
 }
 
+// ── Epic performance chart ───────────────────────────
+function _renderEpicChart(panel, epic) {
+  // ── Resolve sprint scope (pane filter → shared filter → current sprint) ──
+  const sprintScope = epic.sprintFilterId || sharedGridSprintFilter || '';
+  const sprint = sprintScope
+    ? sprintById(sprintScope)
+    : currentSprint();
+
+  // Tasks for this epic, optionally scoped to the sprint
+  const allEpicTasks = allTasks().filter(t =>
+    t.epicId === epic.id && (!sprintScope || t.sprintId === sprintScope)
+  );
+
+  const STATUS_COLORS = {
+    'To Do':       '#94a3b8',
+    'In Progress': '#2563eb',
+    'Practice':    '#d97706',
+    'Revise':      '#db2777',
+    'Done':        '#16a34a',
+  };
+
+  // ── 1. Status breakdown counts ────────────────────
+  const statusCounts = {};
+  STATUS_LIST.forEach(s => { statusCounts[s] = allEpicTasks.filter(t => t.status === s).length; });
+  const total = allEpicTasks.length || 1;
+
+  // ── 2. Daily completions — sprint date range ──────
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayISO = today.toISOString().slice(0,10);
+
+  // Build date range from sprint start → sprint end (capped at today for future days)
+  let rangeStart, rangeEnd, sprintLabel;
+  if (sprint && sprint.startDate && sprint.endDate) {
+    rangeStart  = sprint.startDate;
+    rangeEnd    = sprint.endDate <= todayISO ? sprint.endDate : todayISO;
+    sprintLabel = sprint.name;
+  } else {
+    // Fallback: last 14 days if no sprint
+    const fb = new Date(today); fb.setDate(today.getDate() - 13);
+    rangeStart  = fb.toISOString().slice(0,10);
+    rangeEnd    = todayISO;
+    sprintLabel = 'Last 14 days';
+  }
+
+  // Build ordered list of all dates in [rangeStart, rangeEnd]
+  const dailyDone = {};
+  const cur = new Date(rangeStart + 'T00:00:00');
+  const end = new Date(rangeEnd   + 'T00:00:00');
+  while (cur <= end) {
+    dailyDone[cur.toISOString().slice(0,10)] = 0;
+    cur.setDate(cur.getDate() + 1);
+  }
+  const DAYS = Object.keys(dailyDone).length || 1;
+
+  // Count tasks completed (moved to Done) on each day
+  allEpicTasks.filter(t => t.status === 'Done' && t.updatedAt).forEach(t => {
+    const day = new Date(t.updatedAt).toISOString().slice(0,10);
+    if (day in dailyDone) dailyDone[day]++;
+  });
+
+  const dayKeys   = Object.keys(dailyDone);
+  const dayValues = Object.values(dailyDone);
+  const maxDay    = Math.max(...dayValues, 1);
+
+  // ── SVG dimensions ────────────────────────────────
+  const W = 480, H = 160;
+  const barW     = Math.max(4, Math.floor((W - 40) / DAYS) - 2);
+  const barAreaH = 100;
+  const barTop   = 20;
+
+  // ── Daily bars ────────────────────────────────────
+  const barsSvg = dayKeys.map((day, i) => {
+    const v       = dayValues[i];
+    const bh      = v ? Math.max(4, Math.round(v / maxDay * barAreaH)) : 2;
+    const x       = 30 + i * (barW + 2);
+    const y       = barTop + barAreaH - bh;
+    const lbl     = day.slice(5); // MM-DD
+    const isToday = day === todayISO;
+    const isFuture = day > todayISO;
+    const fill    = isToday ? '#2563eb' : isFuture ? '#e2e8f0' : '#60a5fa';
+    const opacity = isToday ? '1' : isFuture ? '0.4' : '0.8';
+    // Show label on every day if ≤7 days, else every 2nd day
+    const showLbl = DAYS <= 7 || i % 2 === 0 || isToday;
+    return `
+      <rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="2"
+            fill="${fill}" opacity="${opacity}"/>
+      ${v ? `<text x="${x + barW/2}" y="${y - 3}" text-anchor="middle" font-size="9" fill="var(--text)">${v}</text>` : ''}
+      ${showLbl ? `<text x="${x + barW/2}" y="${barTop + barAreaH + 14}" text-anchor="middle" font-size="8.5" fill="${isToday ? 'var(--accent)' : 'var(--muted)'}" font-weight="${isToday ? '700' : 'normal'}">${lbl}</text>` : ''}
+    `;
+  }).join('');
+
+  // ── Status stacked bar ────────────────────────────
+  let stackX = 0;
+  const stackBars = STATUS_LIST.map(s => {
+    const pct  = Math.round(statusCounts[s] / total * 100);
+    if (!pct) return '';
+    const x    = stackX;
+    stackX    += pct;
+    return `<rect x="${x}%" y="0" width="${pct}%" height="100%" fill="${STATUS_COLORS[s]}"/>`;
+  }).join('');
+
+  const legendItems = STATUS_LIST.map(s => `
+    <g>
+      <rect width="9" height="9" rx="2" fill="${STATUS_COLORS[s]}"/>
+      <text x="12" y="9" font-size="10" fill="var(--muted)">${s} (${statusCounts[s]})</text>
+    </g>`).join('');
+
+  panel.innerHTML = `
+    <div class="gv-chart">
+      <div class="gv-chart-section">
+        <div class="gv-chart-label">Status breakdown — ${allEpicTasks.length} task${allEpicTasks.length !== 1 ? 's' : ''}</div>
+        <svg width="100%" height="14" style="border-radius:4px;overflow:hidden;flex-shrink:0">
+          ${stackBars}
+        </svg>
+        <svg width="100%" height="20" style="flex-shrink:0;overflow:visible">
+          <g transform="translate(0,4)">
+            ${STATUS_LIST.map((s,i) => `<g transform="translate(${i * 100},0)">${
+              `<rect width="9" height="9" rx="2" fill="${STATUS_COLORS[s]}"/>` +
+              `<text x="13" y="9" font-size="10" fill="var(--muted)">${s} (${statusCounts[s]})</text>`
+            }</g>`).join('')}
+          </g>
+        </svg>
+      </div>
+      <div class="gv-chart-section gv-chart-section--grow">
+        <div class="gv-chart-label">Tasks completed — ${esc(sprintLabel)} &nbsp;(${rangeStart} → ${rangeEnd})</div>
+        <svg viewBox="0 0 ${W} ${H}" width="100%" height="100%"
+             preserveAspectRatio="none" style="overflow:visible;display:block">
+          <!-- Y-axis guide lines -->
+          ${[0.25,0.5,0.75,1].map(f => {
+            const y = barTop + barAreaH - Math.round(f * barAreaH);
+            return `<line x1="28" y1="${y}" x2="${W}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>
+                    <text x="24" y="${y+3}" text-anchor="end" font-size="8" fill="var(--muted)">${Math.round(f*maxDay)}</text>`;
+          }).join('')}
+          ${barsSvg}
+        </svg>
+      </div>
+    </div>
+  `;
+}
+
 // ── Task card inside grid view ───────────────────────
 function buildGvTaskCard(task, options = {}) {
   const over     = isOverdue(task.dueDate, task.status);
@@ -683,10 +944,19 @@ function buildGvTaskCard(task, options = {}) {
   const isActive = _panelTaskId === task.id;
   const epic     = epicById(task.epicId);
   const missed   = !!options.missed || isTodayWorkWarning(task, epic);
-  return `
-    <div class="kcard gv-kcard${isActive ? ' kcard--panel-active' : ''}${missed ? ' gv-kcard--missed' : ''}"
-         draggable="true" data-task-id="${task.id}" data-epic-id="${task.epicId}">
-      <div class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</div>
+  const expanded = _expandedCards.has(task.id);
+
+  const el = document.createElement('div');
+  el.className = `kcard gv-kcard${isActive ? ' kcard--panel-active' : ''}${missed ? ' gv-kcard--missed' : ''}${expanded ? ' kcard--expanded' : ''}`;
+  el.draggable = true;
+  el.dataset.taskId  = task.id;
+  el.dataset.epicId  = task.epicId;
+  el.innerHTML = `
+    <div class="kcard-title-row" data-action="expand-card" data-id="${task.id}">
+      <span class="kcard-chevron">${expanded ? '▾' : '▸'}</span>
+      <span class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</span>
+    </div>
+    <div class="kcard-detail">
       ${missed ? '<div class="gv-missed-pill">Missed schedule</div>' : ''}
       <div class="kcard-meta">
         ${priorityBadge(task.priority)}
@@ -697,11 +967,23 @@ function buildGvTaskCard(task, options = {}) {
         ${buildSubtaskSummaryHtml(subCount, subDone)}
       </button>
       <div class="kcard-actions">
+        <button class="btn btn-secondary btn-sm btn-today${task.todayWork ? ' active' : ''}" data-action="toggle-today-work" data-task-id="${task.id}" title="${task.todayWork ? 'Remove from today work' : 'Set as today work'}">${task.todayWork ? '★ Today' : '☆ Today'}</button>
         <button class="btn btn-ghost btn-sm" data-action="edit-task" data-task-id="${task.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-action="delete-task" data-task-id="${task.id}">Delete</button>
       </div>
     </div>
   `;
+  el.querySelector('[data-action="expand-card"]').addEventListener('click', e => {
+    e.stopPropagation();
+    if (e.ctrlKey || e.metaKey) {
+      _taskSelectToggle(task.id, el);
+    } else {
+      _clearMultiSelect();
+      _toggleCardExpand(task.id, el);
+      el.querySelector('.kcard-chevron').textContent = _expandedCards.has(task.id) ? '▾' : '▸';
+    }
+  });
+  return el;
 }
 
 // ── Drag-drop scoped per pane ────────────────────────
@@ -711,12 +993,23 @@ function initGridDragDrop() {
   document.querySelectorAll('.gv-kcard[draggable="true"]').forEach(card => {
     card.addEventListener('dragstart', e => {
       _gvDragTaskId = card.dataset.taskId;
+      // If dragged card is part of multi-select, carry all selected ids
+      if (_selectedTaskIds.has(_gvDragTaskId)) {
+        e.dataTransfer.setData('text/plain', [..._selectedTaskIds].join(','));
+      } else {
+        _clearMultiSelect();
+        e.dataTransfer.setData('text/plain', _gvDragTaskId);
+      }
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', _gvDragTaskId);
-      requestAnimationFrame(() => card.classList.add('kcard--dragging'));
+      requestAnimationFrame(() => {
+        document.querySelectorAll('.kcard--multi-selected, .gv-kcard[draggable="true"]').forEach(c => {
+          if (c.dataset.taskId === _gvDragTaskId || _selectedTaskIds.has(c.dataset.taskId))
+            c.classList.add('kcard--dragging');
+        });
+      });
     });
     card.addEventListener('dragend', () => {
-      card.classList.remove('kcard--dragging');
+      document.querySelectorAll('.kcard--dragging').forEach(c => c.classList.remove('kcard--dragging'));
       _gvDragTaskId = null;
       document.querySelectorAll('.gv-col-body.col-body--over')
         .forEach(el => el.classList.remove('col-body--over'));
@@ -745,16 +1038,23 @@ function initGridDragDrop() {
     zone.addEventListener('drop', e => {
       e.preventDefault(); _ec = 0;
       zone.classList.remove('col-body--over');
-      const taskId = _gvDragTaskId || e.dataTransfer.getData('text/plain');
-      if (!taskId) return;
-      const task = allTasks().find(t => t.id === taskId);
-      if (!task || task.epicId !== zone.dataset.epicId) return;
-      if (task.status === zone.dataset.status) return;
-      task.status    = zone.dataset.status;
-      task.updatedAt = new Date().toISOString();
-      _gvDragTaskId  = null;
-      saveState();
-      requestAnimationFrame(() => render());
+      const raw    = e.dataTransfer.getData('text/plain') || _gvDragTaskId;
+      if (!raw) return;
+      const ids    = raw.includes(',') ? raw.split(',') : [raw];
+      const now    = new Date().toISOString();
+      const status = zone.dataset.status;
+      const epicId = zone.dataset.epicId;
+      let moved = false;
+      ids.forEach(id => {
+        const task = allTasks().find(t => t.id === id);
+        if (!task || task.epicId !== epicId || task.status === status) return;
+        task.status    = status;
+        task.updatedAt = now;
+        moved = true;
+      });
+      _gvDragTaskId = null;
+      _clearMultiSelect();
+      if (moved) { saveState(); requestAnimationFrame(() => render()); }
     });
   });
 }
@@ -885,22 +1185,65 @@ document.getElementById('epic-save').addEventListener('click', () => {
 
 // ─── Task Modal ───────────────────────────────────────
 function openTaskModal(epicId, task = null) {
-  document.getElementById('task-modal-title').textContent = task ? 'Edit Task' : 'Add Task';
+  const isEdit  = !!task;
+  const nameEl  = document.getElementById('task-name');
+  const hintEl  = document.getElementById('task-bulk-hint');
+  const noteEl  = document.querySelector('.task-desc-note');
+
+  document.getElementById('task-modal-title').textContent = isEdit ? 'Edit Task' : 'Add Task';
   document.getElementById('task-epic-id').value  = epicId;
-  document.getElementById('task-edit-id').value  = task ? task.id : '';
-  document.getElementById('task-name').value     = task ? task.name      : '';
-  document.getElementById('task-desc').value     = task ? task.desc      : '';
-  document.getElementById('task-assignee').value = task ? task.assignee  : '';
-  document.getElementById('task-due').value      = task ? task.dueDate   : '';
-  document.getElementById('task-priority').value = task ? task.priority  : 'Medium';
-  document.getElementById('task-status').value   = task ? task.status    : 'To Do';
+  document.getElementById('task-edit-id').value  = isEdit ? task.id : '';
+  nameEl.value                                   = isEdit ? task.name      : '';
+  document.getElementById('task-desc').value     = isEdit ? task.desc      : '';
+  document.getElementById('task-assignee').value = isEdit ? task.assignee  : '';
+  document.getElementById('task-due').value      = isEdit ? task.dueDate   : '';
+  document.getElementById('task-priority').value = isEdit ? task.priority  : 'Medium';
+  document.getElementById('task-status').value   = isEdit ? task.status    : 'To Do';
+
+  // In edit mode: single-line feel — hide bulk hint and desc note
+  if (isEdit) {
+    nameEl.rows    = 1;
+    nameEl.placeholder = 'Task name';
+    hintEl.textContent = '';
+    if (noteEl) noteEl.style.display = 'none';
+  } else {
+    nameEl.rows    = 3;
+    nameEl.placeholder = 'One task per line — e.g.\nDesign login page\nWrite unit tests\nReview PR';
+    if (noteEl) noteEl.style.display = '';
+    _updateTaskBulkHint();
+  }
+
   document.getElementById('task-modal').classList.remove('hidden');
-  document.getElementById('task-name').focus();
+  nameEl.focus();
+}
+
+function _taskLines() {
+  return document.getElementById('task-name').value
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
+}
+
+function _updateTaskBulkHint() {
+  const lines  = _taskLines();
+  const hintEl = document.getElementById('task-bulk-hint');
+  const editId = document.getElementById('task-edit-id').value;
+  if (editId) { hintEl.textContent = ''; return; }
+  if (lines.length > 1) {
+    hintEl.textContent = `↵ ${lines.length} tasks will be created`;
+    hintEl.className   = 'task-bulk-hint task-bulk-hint--active';
+  } else {
+    hintEl.textContent = '';
+    hintEl.className   = 'task-bulk-hint';
+  }
 }
 
 function closeTaskModal() {
   document.getElementById('task-modal').classList.add('hidden');
 }
+
+// Live bulk hint update
+document.getElementById('task-name').addEventListener('input', _updateTaskBulkHint);
 
 document.getElementById('task-cancel').addEventListener('click', closeTaskModal);
 document.getElementById('task-modal').addEventListener('click', e => {
@@ -908,12 +1251,11 @@ document.getElementById('task-modal').addEventListener('click', e => {
 });
 
 document.getElementById('task-save').addEventListener('click', () => {
-  const name = document.getElementById('task-name').value.trim();
-  if (!name) { showToast('Task name is required.'); return; }
-  const epicId  = document.getElementById('task-epic-id').value;
-  const editId  = document.getElementById('task-edit-id').value;
-  const taskData = {
-    name,
+  const epicId = document.getElementById('task-epic-id').value;
+  const editId = document.getElementById('task-edit-id').value;
+  const now    = new Date().toISOString();
+
+  const sharedData = {
     desc:     document.getElementById('task-desc').value.trim(),
     assignee: document.getElementById('task-assignee').value.trim(),
     dueDate:  document.getElementById('task-due').value,
@@ -922,12 +1264,24 @@ document.getElementById('task-save').addEventListener('click', () => {
   };
 
   if (editId) {
-    Object.assign(allTasks().find(t => t.id === editId), taskData, { updatedAt: new Date().toISOString() });
+    // ── Edit existing task ────────────────────────────
+    const name = document.getElementById('task-name').value.trim();
+    if (!name) { showToast('Task name is required.'); return; }
+    Object.assign(allTasks().find(t => t.id === editId), { name, ...sharedData, updatedAt: now });
     showToast('Task updated.');
-  } else {
-    allTasks().push({ id: uid(), epicId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...taskData });
-    showToast('Task added!');
+    saveState(); closeTaskModal(); render();
+    return;
   }
+
+  // ── Create one task per non-empty line ────────────
+  const lines = _taskLines();
+  if (!lines.length) { showToast('Enter at least one task name.'); return; }
+
+  lines.forEach(name => {
+    allTasks().push({ id: uid(), epicId, name, createdAt: now, updatedAt: now, ...sharedData });
+  });
+
+  showToast(lines.length > 1 ? `✅ ${lines.length} tasks created!` : '✅ Task added!');
   saveState(); closeTaskModal(); render();
 });
 
@@ -1053,7 +1407,16 @@ function handleGridClick(e) {
     const task = allTasks().find(t => t.id === btn.dataset.taskId);
     task.sprintId = active.id;
     saveState(); render();
-    showToast(`Added to ${active.name}`);
+    showToast(`⚡ Added to ${active.name}`);
+    return;
+  }
+  if (action === 'schedule-to-next-sprint') {
+    const next = nextSprint();
+    if (!next) { showToast('No upcoming sprint found — create one first.'); return; }
+    const task = allTasks().find(t => t.id === btn.dataset.taskId);
+    task.sprintId = next.id;
+    saveState(); render();
+    showToast(`🗓 Scheduled to ${next.name}`);
     return;
   }
   if (action === 'remove-from-sprint') {
@@ -1158,12 +1521,23 @@ function initDragDrop() {
   document.querySelectorAll('.kcard[draggable="true"]').forEach(card => {
     card.addEventListener('dragstart', e => {
       _dragTaskId = card.dataset.taskId;
+      // Multi-select: carry all selected ids if this card is in the selection
+      if (_selectedTaskIds.has(_dragTaskId)) {
+        e.dataTransfer.setData('text/plain', [..._selectedTaskIds].join(','));
+      } else {
+        _clearMultiSelect();
+        e.dataTransfer.setData('text/plain', _dragTaskId);
+      }
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', _dragTaskId);
-      requestAnimationFrame(() => card.classList.add('kcard--dragging'));
+      requestAnimationFrame(() => {
+        document.querySelectorAll('.kcard[draggable="true"]').forEach(c => {
+          if (c.dataset.taskId === _dragTaskId || _selectedTaskIds.has(c.dataset.taskId))
+            c.classList.add('kcard--dragging');
+        });
+      });
     });
     card.addEventListener('dragend', () => {
-      card.classList.remove('kcard--dragging');
+      document.querySelectorAll('.kcard--dragging').forEach(c => c.classList.remove('kcard--dragging'));
       _dragTaskId = null;
       _clearOver();
     });
@@ -1186,17 +1560,21 @@ function initDragDrop() {
     sprintCard.addEventListener('drop', e => {
       e.preventDefault();
       sprintCard.classList.remove('kcard-sprint--drop-target');
-      const taskId = _dragTaskId || e.dataTransfer.getData('text/plain');
-      if (!taskId) return;
-      const task = allTasks().find(t => t.id === taskId);
+      const raw    = e.dataTransfer.getData('text/plain') || _dragTaskId;
+      if (!raw) return;
       const sprint = sprintById(sprintCard.dataset.sprintId);
-      if (!task || !sprint) return;
-      task.sprintId = sprint.id;
-      task.updatedAt = new Date().toISOString();
+      if (!sprint) return;
+      const ids = raw.includes(',') ? raw.split(',') : [raw];
+      const now = new Date().toISOString();
+      ids.forEach(id => {
+        const task = allTasks().find(t => t.id === id);
+        if (task) { task.sprintId = sprint.id; task.updatedAt = now; }
+      });
       _dragTaskId = null;
+      _clearMultiSelect();
       saveState();
       requestAnimationFrame(() => render());
-      showToast(`Tagged to ${sprint.name}`);
+      showToast(`Tagged ${ids.length > 1 ? ids.length + ' tasks' : '1 task'} to ${sprint.name}`);
     });
   });
 
@@ -1225,19 +1603,21 @@ function initDragDrop() {
       e.preventDefault();
       _enterCount = 0;
       zone.classList.remove('col-body--over');
-
-      const taskId = _dragTaskId || e.dataTransfer.getData('text/plain');
-      if (!taskId) return;
-      const task = allTasks().find(t => t.id === taskId);
-      if (!task || task.status === col.status) return;
-
-      task.status    = col.status;
-      task.updatedAt = new Date().toISOString();
-      _dragTaskId    = null;
-      saveState();
-      // Defer render until after the full drag-event chain finishes so the
-      // DOM rebuild (and new initDragDrop wiring) happens on a clean frame.
-      requestAnimationFrame(() => render());
+      const raw = e.dataTransfer.getData('text/plain') || _dragTaskId;
+      if (!raw) return;
+      const ids  = raw.includes(',') ? raw.split(',') : [raw];
+      const now  = new Date().toISOString();
+      let moved  = false;
+      ids.forEach(id => {
+        const task = allTasks().find(t => t.id === id);
+        if (!task || task.status === col.status) return;
+        task.status    = col.status;
+        task.updatedAt = now;
+        moved = true;
+      });
+      _dragTaskId = null;
+      _clearMultiSelect();
+      if (moved) { saveState(); requestAnimationFrame(() => render()); }
     });
   });
 }
@@ -1245,6 +1625,15 @@ function initDragDrop() {
 function _clearOver() {
   document.querySelectorAll('.col-body--over').forEach(el => el.classList.remove('col-body--over'));
 }
+
+// Escape key clears multi-select
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') _clearMultiSelect();
+});
+// Click on board background also clears selection
+document.getElementById('epics-grid').addEventListener('click', e => {
+  if (!e.target.closest('.kcard')) _clearMultiSelect();
+});
 
 // ─── Toast ────────────────────────────────────────────
 let toastTimer;
