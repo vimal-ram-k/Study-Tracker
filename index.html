@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daily Task Tracker</title>
+  <link rel="stylesheet" href="src/css/styles.css" />
+  <!-- SheetJS CDN for Excel export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1 class="logo">📋 Daily Task Tracker</h1>
+      <div class="header-actions">
+        <button class="btn btn-secondary" id="btn-add-epic">+ New Epic</button>
+        <button class="btn btn-secondary" id="btn-grid-view" title="Switch to grid view">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+          </svg>
+          Grid View
+        </button>
+        <button class="btn btn-secondary" id="btn-connect-db" title="Connect Excel DB file for auto-save">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+          </svg>
+          DB
+        </button>
+        <button class="btn btn-success" id="btn-export">⬇ Export</button>
+        <button class="btn btn-secondary btn-icon" id="btn-theme" title="Switch to dark mode">
+          <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+        </button>
+        <button class="btn btn-secondary btn-icon" id="btn-fullscreen" title="Enter fullscreen">
+          <svg id="fs-icon-expand" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+          <svg id="fs-icon-compress" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+            <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Epic Creation Modal -->
+  <div class="modal-overlay hidden" id="epic-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="epic-modal-title">New Epic</h2>
+      <label class="form-label">Epic Name *
+        <input type="text" class="form-input" id="epic-name" placeholder="e.g. Authentication Module" maxlength="80" />
+      </label>
+      <label class="form-label">Description
+        <textarea class="form-input form-textarea" id="epic-desc" placeholder="Brief description…" rows="3"></textarea>
+      </label>
+      <label class="form-label">Priority
+        <select class="form-input" id="epic-priority">
+          <option value="High">🔴 High</option>
+          <option value="Medium" selected>🟡 Medium</option>
+          <option value="Low">🟢 Low</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="epic-cancel">Cancel</button>
+        <button class="btn btn-primary" id="epic-save">Save Epic</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task Creation Modal -->
+  <div class="modal-overlay hidden" id="task-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="task-modal-title">Add Task</h2>
+      <input type="hidden" id="task-epic-id" />
+      <input type="hidden" id="task-edit-id" />
+      <label class="form-label">Task Name *
+        <input type="text" class="form-input" id="task-name" placeholder="e.g. Design login page" maxlength="120" />
+      </label>
+      <label class="form-label">Description
+        <textarea class="form-input form-textarea" id="task-desc" placeholder="Details…" rows="3"></textarea>
+      </label>
+      <div class="form-row">
+        <label class="form-label">Assignee
+          <input type="text" class="form-input" id="task-assignee" placeholder="Name" maxlength="60" />
+        </label>
+        <label class="form-label">Due Date
+          <input type="date" class="form-input" id="task-due" />
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Priority
+          <select class="form-input" id="task-priority">
+            <option value="High">🔴 High</option>
+            <option value="Medium" selected>🟡 Medium</option>
+            <option value="Low">🟢 Low</option>
+          </select>
+        </label>
+        <label class="form-label">Status
+          <select class="form-input" id="task-status">
+            <option value="To Do">To Do</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Practice">Practice</option>
+            <option value="Revise">Revise</option>
+            <option value="Done">Done</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="task-cancel">Cancel</button>
+        <button class="btn btn-primary" id="task-save">Save Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sprint Modal -->
+  <div class="modal-overlay hidden" id="sprint-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="sprint-modal-title">New Sprint</h2>
+      <input type="hidden" id="sprint-edit-id" />
+      <label class="form-label">Sprint Name *
+        <input type="text" class="form-input" id="sprint-name" placeholder="e.g. SPR-2026-W32" maxlength="40" />
+      </label>
+      <label class="form-label">Goal / Notes
+        <textarea class="form-input form-textarea" id="sprint-goal" placeholder="Sprint goal or notes…" rows="2"></textarea>
+      </label>
+      <div class="form-row">
+        <label class="form-label">Start Date (Monday)
+          <input type="date" class="form-input" id="sprint-start" />
+        </label>
+        <label class="form-label">End Date (Saturday)
+          <input type="date" class="form-input" id="sprint-end" />
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="sprint-cancel">Cancel</button>
+        <button class="btn btn-primary" id="sprint-save">Save Sprint</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Modal -->
+  <div class="modal-overlay hidden" id="confirm-modal">
+    <div class="modal modal--sm">
+      <h2 class="modal-title">Confirm Delete</h2>
+      <p class="confirm-msg" id="confirm-msg">Are you sure you want to delete this item?</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Subtask Modal -->
+  <div class="modal-overlay hidden" id="subtask-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="subtask-modal-title">Add Subtask</h2>
+      <input type="hidden" id="subtask-task-id" />
+      <input type="hidden" id="subtask-edit-id" />
+      <label class="form-label">Subtask Name *
+        <input type="text" class="form-input" id="subtask-name" placeholder="e.g. Write unit tests" maxlength="120" />
+      </label>
+      <label class="form-label">Description
+        <textarea class="form-input form-textarea" id="subtask-desc" placeholder="Details…" rows="2"></textarea>
+      </label>
+      <div class="form-row">
+        <label class="form-label">Assignee
+          <input type="text" class="form-input" id="subtask-assignee" placeholder="Name" maxlength="60" />
+        </label>
+        <label class="form-label">Due Date
+          <input type="date" class="form-input" id="subtask-due" />
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Priority
+          <select class="form-input" id="subtask-priority">
+            <option value="High">🔴 High</option>
+            <option value="Medium" selected>🟡 Medium</option>
+            <option value="Low">🟢 Low</option>
+          </select>
+        </label>
+        <label class="form-label">Status
+          <select class="form-input" id="subtask-status">
+            <option value="To Do">To Do</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Practice">Practice</option>
+            <option value="Revise">Revise</option>
+            <option value="Done">Done</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="subtask-cancel">Cancel</button>
+        <button class="btn btn-primary" id="subtask-save">Save Subtask</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <main class="main">
+    <!-- Summary bar -->
+    <section class="summary-bar" id="summary-bar"></section>
+
+    <!-- Grid view epic picker (visible only in grid mode) -->
+    <div class="gv-picker hidden" id="gv-picker">
+      <span class="gv-picker-label">Select epics <span class="gv-picker-hint">(2 per row)</span>:</span>
+      <div class="gv-picker-chips" id="gv-picker-chips"></div>
+      <button class="btn btn-ghost btn-sm" id="gv-select-all">All</button>
+      <button class="btn btn-ghost btn-sm" id="gv-clear-all">None</button>
+    </div>
+
+    <!-- Kanban board / Grid view (shared container) -->
+    <section class="epics-grid" id="epics-grid"></section>
+  </main>
+
+  <!-- Subtask Panel — draggable + resizable floating window -->
+  <div class="subtask-panel hidden" id="subtask-panel">
+    <!-- resize handles -->
+    <div class="sp-resize sp-resize--n"  data-dir="n"></div>
+    <div class="sp-resize sp-resize--s"  data-dir="s"></div>
+    <div class="sp-resize sp-resize--e"  data-dir="e"></div>
+    <div class="sp-resize sp-resize--w"  data-dir="w"></div>
+    <div class="sp-resize sp-resize--nw" data-dir="nw"></div>
+    <div class="sp-resize sp-resize--ne" data-dir="ne"></div>
+    <div class="sp-resize sp-resize--sw" data-dir="sw"></div>
+    <div class="sp-resize sp-resize--se" data-dir="se"></div>
+    <div class="subtask-panel-header" id="subtask-panel-header">
+      <div class="subtask-panel-drag-hint">⠿</div>
+      <div class="subtask-panel-title">
+        <span class="subtask-panel-label">Subtasks of:</span>
+        <strong id="subtask-panel-task-name"></strong>
+        <span class="subtask-panel-count" id="subtask-panel-count"></span>
+      </div>
+      <div class="subtask-panel-actions">
+        <button class="btn btn-secondary" id="subtask-panel-add">+ Add Subtask</button>
+        <button class="btn btn-ghost btn-icon" id="subtask-panel-close" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="subtask-board" id="subtask-board"></div>
+  </div>
+
+  <!-- Connector SVG overlay — drawn between task card dot and panel dot -->
+  <svg id="connector-svg" aria-hidden="true"></svg>
+
+  <!-- Toast notification -->
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="src/js/app.js"></script>
+  <script src="src/js/excel.js"></script>
+</body>
+</html>
