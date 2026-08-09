@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="src/css/styles.css" />
   <!-- SheetJS CDN for Excel export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- PDF.js for page count -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
   <div class="header-shell">
@@ -17,6 +19,9 @@
       <div class="header-actions">
         <div class="header-sprint-badge" id="header-sprint-badge" title="Current sprint"></div>
         <button class="btn btn-secondary" id="btn-add-epic">+ New Epic</button>
+        <button class="btn btn-books" id="btn-books" title="Open Book Tracker">
+          📚 Books
+        </button>
         <button class="btn btn-focus" id="btn-focus-mode" title="Enter Focus Mode">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -341,7 +346,208 @@
     </div>
   </div>
 
+  <!-- ═══════════════════ BOOK TRACKER OVERLAY ═══════════════════ -->
+  <div class="bk-overlay hidden" id="bk-overlay">
+
+    <!-- Hidden file input for PDF picking -->
+    <input type="file" id="bk-pdf-input" accept=".pdf" multiple style="display:none" />
+
+    <!-- ── Category panel (left) ── -->
+    <div class="bk-cat-panel" id="bk-cat-panel">
+      <div class="bk-cat-panel-header">
+        <span class="bk-logo">📚 Books</span>
+        <button class="bk-btn bk-btn--ghost bk-close-btn" id="bk-close" title="Close">✕</button>
+      </div>
+      <div class="bk-cat-list" id="bk-cat-list">
+        <!-- rendered by JS -->
+      </div>
+      <div class="bk-cat-panel-footer">
+        <button class="bk-btn bk-btn--ghost bk-btn--full" id="bk-add-cat">＋ New Category</button>
+      </div>
+    </div>
+
+    <!-- ── Book list panel (middle) ── -->
+    <div class="bk-book-panel" id="bk-book-panel">
+      <div class="bk-book-panel-header">
+        <span class="bk-book-panel-title" id="bk-book-panel-title">All Books</span>
+        <div class="bk-sidebar-actions">
+          <button class="bk-btn bk-btn--primary" id="bk-add-pdf" title="Add PDF to this category">📄 PDF</button>
+          <button class="bk-btn bk-btn--ghost" id="bk-add-manual" title="Add book manually">+ Add</button>
+        </div>
+      </div>
+      <!-- Book list -->
+      <div class="bk-list" id="bk-list"></div>
+    </div>
+
+    <!-- Main panel: book detail + tracker -->
+    <div class="bk-main" id="bk-main">
+      <div class="bk-empty-state" id="bk-empty-state">
+        <div class="bk-empty-icon">📖</div>
+        <div class="bk-empty-title">Select a book to start tracking</div>
+        <div class="bk-empty-sub">Pick a folder or add books manually from the sidebar</div>
+      </div>
+
+      <!-- Book detail card (hidden until book selected) -->
+      <div class="bk-detail hidden" id="bk-detail">
+        <div class="bk-detail-header">
+          <div class="bk-cover" id="bk-cover">📖</div>
+          <div class="bk-info">
+            <div class="bk-title" id="bk-detail-title"></div>
+            <div class="bk-author" id="bk-detail-author"></div>
+            <div class="bk-cat-badge" id="bk-detail-cat"></div>
+          </div>
+          <div class="bk-detail-actions">
+            <button class="bk-btn bk-btn--primary" id="bk-read-btn">📖 Read Now</button>
+            <button class="bk-btn bk-btn--ghost" id="bk-edit-btn">✏️ Edit</button>
+            <button class="bk-btn bk-btn--danger" id="bk-delete-btn">🗑</button>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="bk-progress-wrap">
+          <div class="bk-progress-bar-outer">
+            <div class="bk-progress-bar-inner" id="bk-progress-bar"></div>
+          </div>
+          <span class="bk-progress-label" id="bk-progress-label"></span>
+        </div>
+
+        <!-- Stats row -->
+        <div class="bk-stats-row" id="bk-stats-row"></div>
+
+        <!-- Daily reading schedule -->
+        <div class="bk-schedule-section">
+          <div class="bk-section-title">📅 Daily Reading Schedule</div>
+          <div class="bk-schedule-grid" id="bk-schedule-grid"></div>
+        </div>
+
+        <!-- Reading log -->
+        <div class="bk-log-section">
+          <div class="bk-section-title">
+            📝 Reading Log
+            <button class="bk-btn bk-btn--sm bk-btn--ghost" id="bk-log-add">+ Log Session</button>
+          </div>
+          <div class="bk-log-list" id="bk-log-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Book Add/Edit Modal -->
+  <div class="bk-modal-overlay hidden" id="bk-modal">
+    <div class="bk-modal">
+      <div class="bk-modal-title" id="bk-modal-title">Add Book</div>
+      <label class="bk-label">Title *<input class="bk-input" id="bk-f-title" placeholder="Book title" maxlength="120" /></label>
+      <label class="bk-label">Author<input class="bk-input" id="bk-f-author" placeholder="Author name" maxlength="80" /></label>
+      <label class="bk-label">Category<select class="bk-input" id="bk-f-cat"></select></label>
+      <div class="bk-form-row">
+        <label class="bk-label">Total Pages *<input class="bk-input" id="bk-f-pages" type="number" min="1" placeholder="300" /></label>
+        <label class="bk-label">Current Page<input class="bk-input" id="bk-f-curpage" type="number" min="0" placeholder="0" /></label>
+      </div>
+      <label class="bk-label">Target Finish Date<input class="bk-input" id="bk-f-target" type="date" /></label>
+      <div class="bk-section-title" style="margin:12px 0 6px">Daily Reading Window</div>
+      <div class="bk-form-row">
+        <label class="bk-label">Start<input class="bk-input" id="bk-f-start" type="time" /></label>
+        <label class="bk-label">End<input class="bk-input" id="bk-f-end" type="time" /></label>
+      </div>
+      <label class="bk-label">Daily Pages Goal<input class="bk-input" id="bk-f-daily" type="number" min="1" placeholder="auto-calculated" /></label>
+      <input type="hidden" id="bk-f-id" />
+      <div class="bk-modal-actions">
+        <button class="bk-btn bk-btn--ghost" id="bk-modal-cancel">Cancel</button>
+        <button class="bk-btn bk-btn--primary" id="bk-modal-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log Session Modal -->
+  <div class="bk-modal-overlay hidden" id="bk-log-modal">
+    <div class="bk-modal">
+      <div class="bk-modal-title">Log Reading Session</div>
+      <div class="bk-form-row">
+        <label class="bk-label">From Page<input class="bk-input" id="bk-lf-from" type="number" min="0" /></label>
+        <label class="bk-label">To Page<input class="bk-input" id="bk-lf-to" type="number" min="1" /></label>
+      </div>
+      <label class="bk-label">Date<input class="bk-input" id="bk-lf-date" type="date" /></label>
+      <label class="bk-label">Notes<textarea class="bk-input bk-textarea" id="bk-lf-notes" rows="2" placeholder="Optional notes…"></textarea></label>
+      <input type="hidden" id="bk-lf-book-id" />
+      <div class="bk-modal-actions">
+        <button class="bk-btn bk-btn--ghost" id="bk-log-cancel">Cancel</button>
+        <button class="bk-btn bk-btn--primary" id="bk-log-save">Save Session</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Category Add/Edit Modal -->
+  <div class="bk-modal-overlay hidden" id="bk-cat-modal">
+    <div class="bk-modal" style="max-width:340px">
+      <div class="bk-modal-title" id="bk-cat-modal-title">New Category</div>
+      <label class="bk-label">Category Name *
+        <input class="bk-input" id="bk-cat-name-input" placeholder="e.g. Science, Fiction, Textbooks" maxlength="50" />
+      </label>
+      <input type="hidden" id="bk-cat-edit-id" />
+      <div class="bk-modal-actions">
+        <button class="bk-btn bk-btn--ghost" id="bk-cat-modal-cancel">Cancel</button>
+        <button class="bk-btn bk-btn--primary" id="bk-cat-modal-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full Screen PDF Reader -->
+  <div class="bk-reader hidden" id="bk-reader">
+    <div class="bk-reader-topbar">
+      <div class="bk-reader-title" id="bk-reader-title"></div>
+      <div class="bk-reader-center">
+        <!-- Page nav -->
+        <button class="bk-nav-btn" id="bk-prev-page" title="Previous page">&#8592;</button>
+        <span class="bk-page-info">
+          <input class="bk-page-jump" id="bk-page-jump" type="number" min="1" title="Jump to page" />
+          <span class="bk-page-sep"> / </span>
+          <span id="bk-page-total">—</span>
+        </span>
+        <button class="bk-nav-btn" id="bk-next-page" title="Next page">&#8594;</button>
+        <span class="bk-reader-timer" id="bk-reader-timer">00:00</span>
+        <div class="bk-reader-target" id="bk-reader-target"></div>
+      </div>
+      <div class="bk-reader-actions">
+        <button class="bk-btn bk-btn--ghost" id="bk-zoom-out" title="Zoom out">－</button>
+        <button class="bk-btn bk-btn--ghost" id="bk-zoom-in"  title="Zoom in">＋</button>
+        <button class="bk-btn bk-btn--ghost" id="bk-two-page" title="Two-page spread">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="9" height="16" rx="1"/><rect x="13" y="4" width="9" height="16" rx="1"/>
+          </svg>
+          2-Page
+        </button>
+        <button class="bk-btn bk-btn--ghost" id="bk-fullscreen" title="Toggle fullscreen">
+          <svg id="bk-fs-enter" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+          <svg id="bk-fs-exit" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+            <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+          </svg>
+        </button>
+        <button class="bk-btn bk-btn--primary" id="bk-reader-done">✓ Done</button>
+        <button class="bk-btn bk-btn--ghost"   id="bk-reader-close">✕ Exit</button>
+      </div>
+    </div>
+    <!-- PDF canvas area -->
+    <div class="bk-reader-body" id="bk-reader-body">
+      <div class="bk-pdf-container" id="bk-pdf-container">
+        <canvas id="bk-pdf-canvas"></canvas>
+        <canvas id="bk-pdf-canvas-r" style="display:none"></canvas>
+      </div>
+      <div class="bk-pdf-no-file hidden" id="bk-pdf-no-file">
+        <div style="font-size:48px;margin-bottom:12px">📄</div>
+        <div style="font-size:16px;font-weight:700;margin-bottom:6px">PDF not loaded</div>
+        <div style="font-size:13px;color:#8b949e">Re-select the PDF file to read it in the browser.</div>
+        <button class="bk-btn bk-btn--primary" id="bk-reload-pdf" style="margin-top:18px">📂 Select PDF file</button>
+      </div>
+    </div>
+  </div>
+
   <script src="src/js/app.js"></script>
   <script src="src/js/excel.js"></script>
+  <link rel="stylesheet" href="src/css/books.css" />
+  <script src="src/js/books.js"></script>
 </body>
 </html>
