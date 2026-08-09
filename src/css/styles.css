@@ -347,6 +347,44 @@ body {
   user-select: none;
   min-width: 0;
 }
+.btn-subtasks-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.btn-subtasks-inline:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-subtasks-inline:hover .subtask-pill {
+  background: rgba(255,255,255,.25);
+  color: #fff;
+}
+.btn-subtasks-inline.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-subtasks-inline.active .subtask-pill {
+  background: rgba(255,255,255,.25);
+  color: #fff;
+}
+.kcard--expanded .btn-subtasks-inline {
+  display: none;
+}
 .kcard-chevron {
   font-size: 10px;
   color: var(--muted);

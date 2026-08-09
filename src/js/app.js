@@ -555,6 +555,7 @@ function buildTaskCard(task) {
     <div class="kcard-title-row" data-action="expand-card" data-id="${task.id}">
       <span class="kcard-chevron">${expanded ? '▾' : '▸'}</span>
       <span class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</span>
+      ${subCount > 0 ? `<button class="btn-subtasks-inline${isActive ? ' active' : ''}" data-action="view-subtasks" data-task-id="${task.id}" title="Open subtasks (${subDone}/${subCount} done)">⊞ <span class="subtask-pill">${subDone}/${subCount}</span></button>` : ''}
     </div>
     <div class="kcard-detail">
       ${epic ? `<div class="kcard-epic-tag">${esc(epic.name)}</div>` : ''}
@@ -578,16 +579,22 @@ function buildTaskCard(task) {
   `;
   el.querySelector('[data-action="expand-card"]').addEventListener('click', e => {
     e.stopPropagation();
+    if (e.target.closest('[data-action="view-subtasks"]')) return;
     if (e.ctrlKey || e.metaKey) {
-      // Ctrl/Cmd+click — toggle multi-select
       _taskSelectToggle(task.id, el);
     } else {
-      // Plain click — expand/collapse
       _clearMultiSelect();
       _toggleCardExpand(task.id, el);
       el.querySelector('.kcard-chevron').textContent = _expandedCards.has(task.id) ? '▾' : '▸';
     }
   });
+  const inlineSubBtn = el.querySelector('.btn-subtasks-inline');
+  if (inlineSubBtn) {
+    inlineSubBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      openSubtaskPanel({ taskId: task.id, sourceEl: inlineSubBtn });
+    });
+  }
   return el;
 }
 
@@ -955,6 +962,7 @@ function buildGvTaskCard(task, options = {}) {
     <div class="kcard-title-row" data-action="expand-card" data-id="${task.id}">
       <span class="kcard-chevron">${expanded ? '▾' : '▸'}</span>
       <span class="kcard-title" title="${esc(task.name)}">${esc(task.name)}</span>
+      ${subCount > 0 ? `<button class="btn-subtasks-inline${isActive ? ' active' : ''}" data-action="view-subtasks" data-task-id="${task.id}" title="Open subtasks (${subDone}/${subCount} done)">⊞ <span class="subtask-pill">${subDone}/${subCount}</span></button>` : ''}
     </div>
     <div class="kcard-detail">
       ${missed ? '<div class="gv-missed-pill">Missed schedule</div>' : ''}
@@ -975,6 +983,7 @@ function buildGvTaskCard(task, options = {}) {
   `;
   el.querySelector('[data-action="expand-card"]').addEventListener('click', e => {
     e.stopPropagation();
+    if (e.target.closest('[data-action="view-subtasks"]')) return;
     if (e.ctrlKey || e.metaKey) {
       _taskSelectToggle(task.id, el);
     } else {
@@ -983,6 +992,13 @@ function buildGvTaskCard(task, options = {}) {
       el.querySelector('.kcard-chevron').textContent = _expandedCards.has(task.id) ? '▾' : '▸';
     }
   });
+  const inlineSubBtn = el.querySelector('.btn-subtasks-inline');
+  if (inlineSubBtn) {
+    inlineSubBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      openSubtaskPanel({ taskId: task.id, sourceEl: inlineSubBtn });
+    });
+  }
   return el;
 }
 
