@@ -162,15 +162,25 @@ function _parseWorkbook(wb) {
     .map(r => {
       const id = r['__id'] || uid();
       const existing = existingEpicById[id] || {};
+      // Parse scheduledTaskIds: stored as comma-separated string
+      const rawIds = r['Scheduled Task IDs'];
+      const scheduledTaskIds = rawIds && String(rawIds).trim()
+        ? String(rawIds).split(',').map(s => s.trim()).filter(Boolean)
+        : (existing.scheduledTaskIds || []);
       return {
-        // Carry over ALL existing fields first, then overwrite with sheet values.
-        // This preserves schedule fields, sprintFilterId, etc. that are not in Excel.
+        // Carry over in-memory fields first (for any columns not in the sheet),
+        // then overwrite with the authoritative sheet values including schedule data.
         ...existing,
         id,
-        name:      r['Epic']        || '',
-        desc:      r['Description'] || '',
-        priority:  r['Priority']    || 'Medium',
-        createdAt: r['Created']     || existing.createdAt || new Date().toISOString(),
+        name:             r['Epic']        || '',
+        desc:             r['Description'] || '',
+        priority:         r['Priority']    || 'Medium',
+        createdAt:        r['Created']     || existing.createdAt || new Date().toISOString(),
+        scheduleEnabled:  r['Schedule Enabled'] === 'TRUE',
+        scheduleLabel:    r['Schedule Label']  || '',
+        scheduleStart:    r['Schedule Start']  || '',
+        scheduleEnd:      r['Schedule End']    || '',
+        scheduledTaskIds,
       };
     });
 
@@ -447,7 +457,9 @@ function _epicsRows() {
   const rows = [[
     'Epic', 'Description', 'Priority',
     'Total Tasks', 'Done', 'In Progress', 'Practice', 'Revise', 'To Do',
-    '% Done', 'Created', '__id'
+    '% Done', 'Created',
+    'Schedule Enabled', 'Schedule Label', 'Schedule Start', 'Schedule End', 'Scheduled Task IDs',
+    '__id'
   ]];
   (state.epics || []).forEach(e => {
     const tasks = (state.tasks || []).filter(t => t.epicId === e.id);
@@ -457,7 +469,13 @@ function _epicsRows() {
     rows.push([
       e.name, e.desc || '', e.priority || 'Medium',
       tasks.length, done, cnt('In Progress'), cnt('Practice'), cnt('Revise'), cnt('To Do'),
-      pct + '%', _d(e.createdAt), e.id
+      pct + '%', _d(e.createdAt),
+      e.scheduleEnabled ? 'TRUE' : 'FALSE',
+      e.scheduleLabel   || '',
+      e.scheduleStart   || '',
+      e.scheduleEnd     || '',
+      Array.isArray(e.scheduledTaskIds) ? e.scheduledTaskIds.join(',') : '',
+      e.id
     ]);
   });
   if (rows.length === 1) rows.push(['No epics yet']);
