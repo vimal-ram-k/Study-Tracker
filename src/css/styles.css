@@ -1321,3 +1321,234 @@ body {
   .stat-card { min-width: 0; padding: 8px 10px; }
   .stat-card .stat-value { font-size: 18px; }
 }
+
+/* ═══════════════════════════════════════════════════
+   Focus Mode
+   ═══════════════════════════════════════════════════ */
+
+/* Focus Mode button */
+.btn-focus {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #fff;
+  border-color: #6366f1;
+  font-weight: 700;
+}
+.btn-focus:hover {
+  opacity: .88;
+  background: linear-gradient(135deg, #4f52d6 0%, #7c3aed 100%);
+}
+.btn-focus.active {
+  background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+  border-color: #4338ca;
+}
+
+/* Full-screen overlay */
+.fm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+.fm-overlay.hidden { display: none; }
+
+/* ── Top half: timer section ── */
+.fm-top-bar {
+  flex: 0 0 50vh;           /* exactly half the screen */
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 2px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+
+/* Title row: label left, close right */
+.fm-top-titlerow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px 0;
+  flex-shrink: 0;
+}
+.fm-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: #7c3aed;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+}
+.fm-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fm-fs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background .15s;
+}
+.fm-fs-btn:hover { background: var(--surface2); }
+.fm-fs-btn.active { background: var(--surface2); border-color: var(--border-strong); }
+.fm-alarm-stop-btn {
+  padding: 7px 18px;
+  border-radius: var(--radius);
+  border: 2px solid var(--danger);
+  background: var(--danger);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  letter-spacing: .3px;
+  animation: fm-alarm-pulse 0.6s ease-in-out infinite alternate;
+}
+.fm-alarm-stop-btn:hover { opacity: .85; }
+.fm-alarm-stop-btn.hidden { display: none; }
+.fm-alarm-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .15s;
+  line-height: 1;
+}
+.fm-alarm-toggle-btn:hover { background: var(--surface2); }
+.fm-alarm-toggle--off {
+  opacity: .45;
+  border-style: dashed;
+}
+@keyframes fm-alarm-pulse {
+  from { box-shadow: 0 0 0 0 rgba(220,38,38,.5); }
+  to   { box-shadow: 0 0 0 8px rgba(220,38,38,0); }
+}
+.fm-close-btn {
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.fm-close-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+/* Timer pills area — centred, scrollable if many epics */
+.fm-timers {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 16px 32px 20px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+}
+
+/* One large card per scheduled epic */
+.fm-timer-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 32px;
+  border-radius: 20px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  min-width: 200px;
+  flex-shrink: 0;
+  transition: border-color .2s, background .2s, box-shadow .2s;
+}
+.fm-timer-pill.fm-timer--active {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.06);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12), var(--shadow);
+}
+.fm-timer-pill.fm-timer--done {
+  border-color: #16a34a;
+  background: rgba(22, 163, 74, 0.06);
+  opacity: .75;
+}
+.fm-timer-pill.fm-timer--overdue {
+  border-color: var(--danger);
+  background: rgba(220, 38, 38, 0.06);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.10), var(--shadow);
+}
+.fm-timer-epic-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  text-align: center;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fm-timer-range {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fm-timer-countdown {
+  font-size: clamp(42px, 6vw, 72px);
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: #6366f1;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+.fm-timer-pill.fm-timer--done    .fm-timer-countdown { color: #16a34a; }
+.fm-timer-pill.fm-timer--overdue .fm-timer-countdown { color: var(--danger); }
+
+/* ── Bottom half wrapper (grid + task board) ── */
+.fm-bottom-half {
+  flex: 0 0 50vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Grid: takes the upper portion of the bottom half ── */
+.fm-grid-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 16px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Rows and panes inside focus mode reuse .gv-row/.gv-pane */
+.fm-grid-wrap .gv-row {
+  flex: 0 0 auto;
+  min-height: 220px;
+}
+

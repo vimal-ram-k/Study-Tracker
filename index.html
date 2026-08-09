@@ -17,6 +17,12 @@
       <div class="header-actions">
         <div class="header-sprint-badge" id="header-sprint-badge" title="Current sprint"></div>
         <button class="btn btn-secondary" id="btn-add-epic">+ New Epic</button>
+        <button class="btn btn-focus" id="btn-focus-mode" title="Enter Focus Mode">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          Focus Mode
+        </button>
         <button class="btn btn-secondary" id="btn-grid-view" title="Switch to grid view">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
@@ -292,6 +298,48 @@
 
   <!-- Toast notification -->
   <div class="toast hidden" id="toast"></div>
+
+  <!-- Focus Mode Overlay -->
+  <div class="fm-overlay hidden" id="fm-overlay">
+
+    <!-- TOP HALF: big timer section (50vh) -->
+    <div class="fm-top-bar" id="fm-top-bar">
+      <div class="fm-top-titlerow">
+        <span class="fm-label">🎯 Focus Mode</span>
+        <button class="fm-alarm-stop-btn hidden" id="fm-alarm-stop" title="Stop alarm">🔔 Stop Alarm</button>
+        <div class="fm-top-actions">
+          <button class="fm-alarm-toggle-btn" id="fm-alarm-toggle" title="Alarm is ON — click to disable">
+            🔔
+          </button>
+          <button class="fm-fs-btn" id="fm-fs-btn" title="Enter fullscreen">
+            <svg id="fm-fs-expand" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+              <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+            <svg id="fm-fs-compress" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+              <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+              <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+            </svg>
+          </button>
+          <button class="fm-close-btn" id="fm-close-btn" title="Exit Focus Mode">✕ Exit</button>
+        </div>
+      </div>
+      <div class="fm-timers" id="fm-timers">
+        <!-- Filled by JS: one large card per scheduled epic -->
+      </div>
+    </div>
+
+    <!-- BOTTOM HALF: grid view + task board (50vh) -->
+    <div class="fm-bottom-half">
+
+      <!-- Grid view of scheduled epics -->
+      <div class="fm-grid-wrap" id="fm-grid-wrap">
+        <!-- Filled by JS -->
+      </div>
+
+
+    </div>
+  </div>
 
   <script src="src/js/app.js"></script>
   <script src="src/js/excel.js"></script>

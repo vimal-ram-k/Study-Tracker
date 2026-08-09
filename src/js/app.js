@@ -2118,3 +2118,327 @@ if (!state.sprints)  state.sprints  = [];
 if (!state.subtasks) state.subtasks = [];
 ensureCurrentSprint();   // auto-create this week's sprint if missing
 render();
+
+// ═══════════════════════════════════════════════════
+// ─── Focus Mode ─────────────────────────────────────
+// ═══════════════════════════════════════════════════
+
+let _fmActive = false;
+let _fmTimerInterval = null;
+
+/* ── Alarm sound (Web Audio API — ding-dong bell, repeats until stopped) ── */
+let _fmAlarmCtx      = null;
+let _fmAlarmInterval = null;
+let _fmAlarmActive   = false;
+let _fmAlarmEnabled  = true;   // toggle: user can disable alarm entirely
+
+function _fmStopAlarm() {
+  if (_fmAlarmInterval) { clearInterval(_fmAlarmInterval); _fmAlarmInterval = null; }
+  if (_fmAlarmCtx)      { _fmAlarmCtx.close(); _fmAlarmCtx = null; }
+  _fmAlarmActive = false;
+  const btn = document.getElementById('fm-alarm-stop');
+  if (btn) btn.classList.add('hidden');
+}
+
+// Play a single ding-dong (high note then low note, bell-like)
+function _fmDingDong(ctx) {
+  // Each note: short attack, exponential decay — bell shape
+  [[0, 1318, 0.45], [0.35, 880, 0.55]].forEach(([t, freq, decay]) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    // Slight pitch drop for bell shimmer
+    o.frequency.setTargetAtTime(freq * 0.98, ctx.currentTime + t, 0.1);
+    g.gain.setValueAtTime(0, ctx.currentTime + t);
+    g.gain.linearRampToValueAtTime(0.45, ctx.currentTime + t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + decay);
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start(ctx.currentTime + t);
+    o.stop(ctx.currentTime + t + decay + 0.05);
+  });
+}
+
+function _fmPlayAlarm() {
+  if (!_fmAlarmEnabled) return;
+  _fmStopAlarm();
+
+  try {
+    _fmAlarmCtx    = new (window.AudioContext || window.webkitAudioContext)();
+    _fmAlarmActive = true;
+
+    const btn = document.getElementById('fm-alarm-stop');
+    if (btn) btn.classList.remove('hidden');
+
+    function _ring() {
+      if (!_fmAlarmActive || !_fmAlarmCtx) return;
+      _fmDingDong(_fmAlarmCtx);
+    }
+
+    _ring();                                      // first ring immediately
+    _fmAlarmInterval = setInterval(_ring, 1400);  // ring every 1.4 s
+    setTimeout(_fmStopAlarm, 60_000);             // auto-stop after 60 s
+  } catch (_) { /* AudioContext unavailable */ }
+}
+
+// Tracks whether the 60-second warning has already been played for current epic
+let _fmWarnedEpicId = null;
+
+/* ── Helpers ── */
+
+function _fmScheduledEpics() {
+  return state.epics.filter(e => e.scheduleStart && e.scheduleEnd);
+}
+
+/**
+ * Given a "HH:MM" string returns total minutes from midnight.
+ */
+function _fmToMinutes(hhmm) {
+  if (!hhmm) return 0;
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+/**
+ * Format remaining seconds as "H:MM:SS" or "MM:SS".
+ */
+function _fmFormatCountdown(totalSeconds) {
+  if (totalSeconds <= 0) return '00:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  if (h > 0) return `${h}:${mm}:${ss}`;
+  return `${mm}:${ss}`;
+}
+
+/**
+ * Pick the single epic to show in the timer:
+ *   1. The currently active epic (now is within its window).
+ *   2. If none active, the next upcoming epic (smallest startMin > now).
+ * Returns null when all epics are done for the day.
+ */
+function _fmCurrentEpic() {
+  const now        = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const scheduled  = _fmScheduledEpics();
+
+  // Prefer the active one
+  const active = scheduled.find(e =>
+    nowMinutes >= _fmToMinutes(e.scheduleStart) &&
+    nowMinutes <  _fmToMinutes(e.scheduleEnd)
+  );
+  if (active) return active;
+
+  // Next upcoming (not yet started, sorted by start time)
+  const upcoming = scheduled
+    .filter(e => nowMinutes < _fmToMinutes(e.scheduleStart))
+    .sort((a, b) => _fmToMinutes(a.scheduleStart) - _fmToMinutes(b.scheduleStart));
+  return upcoming[0] || null;
+}
+
+// Track which epic the timer is currently showing so we know when to switch
+let _fmShownEpicId = null;
+
+/* ── Timer renderer — always shows exactly one epic ── */
+function _fmRenderTimers() {
+  const container = document.getElementById('fm-timers');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const epic = _fmCurrentEpic();
+  if (!epic) {
+    container.innerHTML = '<span style="font-size:14px;color:var(--muted);font-weight:600">All scheduled sessions done for today ✓</span>';
+    _fmShownEpicId = null;
+    return;
+  }
+
+  _fmShownEpicId = epic.id;
+
+  const now        = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const startMin   = _fmToMinutes(epic.scheduleStart);
+  const endMin     = _fmToMinutes(epic.scheduleEnd);
+  const isActive   = nowMinutes >= startMin && nowMinutes < endMin;
+
+  let countdownText;
+  if (isActive) {
+    const remainingSec = Math.max(0, (endMin - nowMinutes) * 60 - now.getSeconds());
+    countdownText = _fmFormatCountdown(remainingSec);
+  } else {
+    const untilStart = Math.max(0, (startMin - nowMinutes) * 60 - now.getSeconds());
+    countdownText = `Starts in ${_fmFormatCountdown(untilStart)}`;
+  }
+
+  const pill = document.createElement('div');
+  pill.className = 'fm-timer-pill' + (isActive ? ' fm-timer--active' : '');
+  pill.dataset.epicId = epic.id;
+  pill.innerHTML = `
+    <span class="fm-timer-epic-name" title="${esc(epic.name)}">${esc(epic.name)}</span>
+    <span class="fm-timer-range">${esc(epic.scheduleStart)}–${esc(epic.scheduleEnd)}</span>
+    <span class="fm-timer-countdown" data-fm-countdown="${epic.id}">${esc(countdownText)}</span>
+  `;
+  container.appendChild(pill);
+}
+
+/* ── Grid view — shows only the current epic's pane ── */
+function _fmRenderGrid() {
+  const wrap = document.getElementById('fm-grid-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const epic = _fmCurrentEpic();
+  if (!epic) {
+    wrap.innerHTML = '<div class="gv-empty">No active scheduled epic right now.</div>';
+    return;
+  }
+
+  const rowEl = document.createElement('div');
+  rowEl.className = 'gv-row';
+  buildGvPane(epic, rowEl);
+  wrap.appendChild(rowEl);
+
+  initGridDragDrop();
+}
+
+/* ── Live countdown tick — switches epic when time window changes ── */
+function _fmTickCountdowns() {
+  const now        = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const epic       = _fmCurrentEpic();
+
+  // If the visible epic has changed, play switch alarm + full re-render
+  const newId = epic ? epic.id : null;
+  if (newId !== _fmShownEpicId) {
+    _fmPlayAlarm();
+    _fmRenderTimers();
+    _fmRenderGrid();
+    return;
+  }
+
+  if (!epic) return;
+
+  const el   = document.querySelector(`[data-fm-countdown="${epic.id}"]`);
+  const pill = el?.closest('.fm-timer-pill');
+  if (!el || !pill) return;
+
+  const startMin = _fmToMinutes(epic.scheduleStart);
+  const endMin   = _fmToMinutes(epic.scheduleEnd);
+  const isActive = nowMinutes >= startMin && nowMinutes < endMin;
+
+  pill.classList.toggle('fm-timer--active', isActive);
+
+  if (isActive) {
+    const remainingSec = Math.max(0, (endMin - nowMinutes) * 60 - now.getSeconds());
+    el.textContent = _fmFormatCountdown(remainingSec);
+
+    // Play warning beep once when exactly 60 seconds remain
+    if (remainingSec <= 60 && _fmWarnedEpicId !== epic.id) {
+      _fmWarnedEpicId = epic.id;
+      _fmPlayAlarm();
+    }
+  } else {
+    const untilStart = Math.max(0, (startMin - nowMinutes) * 60 - now.getSeconds());
+    el.textContent = `Starts in ${_fmFormatCountdown(untilStart)}`;
+  }
+}
+
+/* ── Open / Close ── */
+function openFocusMode() {
+  _fmActive = true;
+  document.getElementById('fm-overlay').classList.remove('hidden');
+  document.getElementById('btn-focus-mode').classList.add('active');
+
+  _fmRenderTimers();
+  _fmRenderGrid();
+
+  // Start live countdown every second
+  clearInterval(_fmTimerInterval);
+  _fmTimerInterval = setInterval(() => {
+    if (!_fmActive) { clearInterval(_fmTimerInterval); return; }
+    _fmTickCountdowns();
+  }, 1000);
+}
+
+function closeFocusMode() {
+  _fmActive = false;
+  _fmShownEpicId  = null;
+  _fmWarnedEpicId = null;
+  _fmStopAlarm();
+  clearInterval(_fmTimerInterval);
+  _fmTimerInterval = null;
+  document.getElementById('fm-overlay').classList.add('hidden');
+  document.getElementById('btn-focus-mode').classList.remove('active');
+}
+
+/* ── Wire up buttons ── */
+document.getElementById('btn-focus-mode').addEventListener('click', () => {
+  if (_fmActive) closeFocusMode(); else openFocusMode();
+});
+
+document.getElementById('fm-close-btn').addEventListener('click', closeFocusMode);
+document.getElementById('fm-alarm-stop').addEventListener('click', _fmStopAlarm);
+
+/* ── Alarm enable/disable toggle ── */
+(function () {
+  const btn = document.getElementById('fm-alarm-toggle');
+  function _update() {
+    btn.textContent = _fmAlarmEnabled ? '🔔' : '🔕';
+    btn.title       = _fmAlarmEnabled ? 'Alarm ON — click to disable' : 'Alarm OFF — click to enable';
+    btn.classList.toggle('fm-alarm-toggle--off', !_fmAlarmEnabled);
+  }
+  btn.addEventListener('click', () => {
+    _fmAlarmEnabled = !_fmAlarmEnabled;
+    if (!_fmAlarmEnabled) _fmStopAlarm(); // silence if currently ringing
+    _update();
+  });
+  _update();
+})();
+
+/* ── Focus Mode fullscreen toggle ── */
+(function () {
+  const btn      = document.getElementById('fm-fs-btn');
+  const iconExp  = document.getElementById('fm-fs-expand');
+  const iconComp = document.getElementById('fm-fs-compress');
+
+  function updateIcons(isFs) {
+    iconExp.style.display  = isFs ? 'none' : '';
+    iconComp.style.display = isFs ? ''     : 'none';
+    btn.title = isFs ? 'Exit fullscreen' : 'Enter fullscreen';
+    btn.classList.toggle('active', isFs);
+  }
+
+  btn.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.getElementById('fm-overlay').requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
+
+  document.addEventListener('fullscreenchange', () => {
+    updateIcons(!!document.fullscreenElement);
+  });
+})();
+
+// Close on Escape (appends to the existing keydown handler at line ~1630)
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _fmActive) closeFocusMode();
+});
+
+// Keep the FM view live after any data change.
+// saveState() already calls window._onSaveState if defined.
+// We append our refresh to that hook after all scripts have loaded
+// (excel.js sets _onSaveState during its own evaluation, which happens
+//  immediately after app.js since both are synchronous <script> tags).
+window.addEventListener('load', () => {
+  const _existingHook = window._onSaveState;
+  window._onSaveState = function () {
+    if (typeof _existingHook === 'function') _existingHook();
+    if (_fmActive) {
+      _fmRenderGrid();
+    }
+  };
+}, { once: true });

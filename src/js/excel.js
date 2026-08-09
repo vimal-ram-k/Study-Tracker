@@ -151,16 +151,28 @@ function _parseWorkbook(wb) {
   }
 
   // --- Epics ---
+  // Build a lookup of the current in-memory epics by id so we can preserve
+  // any fields that are NOT stored in the Excel sheet (schedule*, sprintFilterId, …).
+  const existingEpicById = {};
+  (state.epics || []).forEach(e => { existingEpicById[e.id] = e; });
+
   const epicRows = sheetRows('Epics');
   const epics = epicRows
     .filter(r => r['Epic'] && r['Epic'] !== 'No epics yet')
-    .map(r => ({
-      id:          r['__id']       || uid(),
-      name:        r['Epic']       || '',
-      desc:        r['Description']|| '',
-      priority:    r['Priority']   || 'Medium',
-      createdAt:   r['Created']    || new Date().toISOString(),
-    }));
+    .map(r => {
+      const id = r['__id'] || uid();
+      const existing = existingEpicById[id] || {};
+      return {
+        // Carry over ALL existing fields first, then overwrite with sheet values.
+        // This preserves schedule fields, sprintFilterId, etc. that are not in Excel.
+        ...existing,
+        id,
+        name:      r['Epic']        || '',
+        desc:      r['Description'] || '',
+        priority:  r['Priority']    || 'Medium',
+        createdAt: r['Created']     || existing.createdAt || new Date().toISOString(),
+      };
+    });
 
   // --- Sprints ---
   const sprintRows = sheetRows('Sprints');
