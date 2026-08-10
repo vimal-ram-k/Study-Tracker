@@ -880,7 +880,7 @@ body {
   box-shadow: var(--glass-shadow), 0 8px 40px rgba(0,0,0,.22);
   display: flex;
   flex-direction: column;
-  z-index: 150;
+  z-index: 600;
   overflow: hidden;
   /* prevent text selection while dragging/resizing */
   user-select: none;
@@ -1590,3 +1590,103 @@ body {
   min-height: 220px;
 }
 
+
+/* ===== Schedule Panel — draggable floating window ===== */
+.sched-panel {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  width: 420px;
+  min-width: 280px;
+  max-width: 92vw;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-shadow), 0 8px 40px rgba(0,0,0,.22);
+  display: flex;
+  flex-direction: column;
+  z-index: 600;
+  overflow: hidden;
+  user-select: none;
+}
+.sched-panel.hidden { display: none; }
+
+.sched-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  flex-shrink: 0;
+}
+.sched-panel-header:active { cursor: grabbing; }
+.sched-panel-drag-hint {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.sched-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+.sched-panel-body {
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px 0;
+}
+
+.sched-empty {
+  padding: 24px 16px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.7;
+}
+
+.sched-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.sched-table tr { border-bottom: 1px solid var(--border); }
+.sched-table tr:last-child { border-bottom: none; }
+.sched-table td {
+  padding: 7px 10px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.sched-td-time   { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; width: 110px; }
+.sched-td-icon   { width: 24px; text-align: center; font-size: 14px; }
+.sched-td-label  { font-weight: 600; color: var(--text); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.sched-td-detail { color: var(--muted); font-size: 11px; }
+.sched-td-badge  { width: 60px; text-align: right; }
+
+/* Row state highlighting */
+.sched-row--active td { background: rgba(37,99,235,0.08); }
+.sched-row--active .sched-td-time,
+.sched-row--active .sched-td-label { color: var(--accent); }
+.sched-row--missed td { background: rgba(220,38,38,0.06); }
+.sched-row--missed .sched-td-label { color: var(--danger); }
+.sched-row--past  .sched-td-label,
+.sched-row--past  .sched-td-time  { opacity: 0.45; }
+
+/* NOW / Missed badges */
+.sched-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 2px 6px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sched-badge--now    { background: var(--accent); color: #fff; }
+.sched-badge--missed { background: var(--danger);  color: #fff; }

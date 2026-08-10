@@ -714,7 +714,7 @@ function buildGvPane(epic, rowEl) {
         <span>Sprint</span>
         <select data-action="set-sprint-filter" data-epic-id="${epic.id}">
           <option value="">All</option>
-          ${allSprints().slice().sort((a, b) => b.startDate.localeCompare(a.startDate)).map(sprint => `<option value="${sprint.id}" ${epic.sprintFilterId === sprint.id ? 'selected' : ''}>${esc(sprint.name)}</option>`).join('')}
+          ${allSprints().slice().sort((a, b) => b.startDate.localeCompare(a.startDate)).map(sprint => `<option value="${sprint.id}" ${sprintScope === sprint.id ? 'selected' : ''}>${esc(sprint.name)}</option>`).join('')}
         </select>
       </label>
       <span class="gv-pane-stat">${tasks.length} task${tasks.length !== 1 ? 's' : ''}</span>
@@ -796,7 +796,7 @@ function buildGvPane(epic, rowEl) {
         saveState(); render(); showToast('Task deleted.');
       });
     }
-    if (action === 'view-subtasks') openSubtaskPanel(b.dataset.taskId);
+    if (action === 'view-subtasks') openSubtaskPanel({ taskId: b.dataset.taskId, sourceEl: b });
   });
 
   pane.appendChild(colRow);
@@ -1104,10 +1104,9 @@ document.getElementById('gv-clear-all').addEventListener('click', () => {
 });
 document.getElementById('gv-shared-sprint-select').addEventListener('change', (e) => {
   sharedGridSprintFilter = e.target.value;
-  render();
-});
-document.getElementById('gv-shared-sprint-select').addEventListener('change', (e) => {
-  sharedGridSprintFilter = e.target.value;
+  // Push the shared filter into every epic's own filter so pane dropdowns stay in sync
+  state.epics.forEach(epic => { epic.sprintFilterId = sharedGridSprintFilter; });
+  saveState();
   render();
 });
 
@@ -2126,6 +2125,119 @@ document.getElementById('subtask-save').addEventListener('click', () => {
   renderSubtaskPanel();
   render();   // refresh parent task card subtask count
 });
+
+// ═══════════════════════════════════════════════════
+// ─── Schedule Panel ──────────────────────────────────
+// ═══════════════════════════════════════════════════
+
+function _schedPanelRows() {
+  const rows = [];
+
+  // ── Epics with a schedule ──
+  (state.epics || [])
+    .filter(e => e.scheduleStart && e.scheduleEnd)
+    .forEach(e => {
+      rows.push({
+        type:     'epic',
+        label:    e.scheduleLabel ? e.scheduleLabel : e.name,
+        time:     `${e.scheduleStart}–${e.scheduleEnd}`,
+        startMin: parseTimeToMinutes(e.scheduleStart),
+      });
+    });
+
+  // ── Books with a schedule window ──
+  if (typeof bkState !== 'undefined') {
+    (bkState.books || [])
+      .filter(b => b.schedStart && b.schedEnd)
+      .forEach(b => {
+        rows.push({
+          type:     'book',
+          label:    b.title,
+          time:     `${b.schedStart}–${b.schedEnd}`,
+          startMin: parseTimeToMinutes(b.schedStart),
+        });
+      });
+  }
+
+  rows.sort((a, b) => a.startMin - b.startMin);
+  return rows;
+}
+
+function renderSchedulePanel() {
+  const body = document.getElementById('sched-panel-body');
+  if (!body) return;
+
+  const rows = _schedPanelRows();
+  if (rows.length === 0) {
+    body.innerHTML = '<div class="sched-empty">No scheduled activities found.<br>Add a schedule to an Epic or Book to see it here.</div>';
+    return;
+  }
+
+  const tableRows = rows.map(r => {
+    const icon = r.type === 'book' ? '📖' : '🎯';
+    return `<tr class="sched-row">
+      <td class="sched-td-time">${esc(r.time)}</td>
+      <td class="sched-td-icon">${icon}</td>
+      <td class="sched-td-label">${esc(r.label)}</td>
+    </tr>`;
+  }).join('');
+
+  body.innerHTML = `<table class="sched-table"><tbody>${tableRows}</tbody></table>`;
+}
+
+function openSchedulePanel() {
+  const panel = document.getElementById('sched-panel');
+  panel.classList.remove('hidden');
+  document.getElementById('btn-schedule-panel').classList.add('active');
+  // Position top-right on first open
+  if (!panel.style.right) {
+    panel.style.top   = '64px';
+    panel.style.right = '16px';
+    panel.style.left  = '';
+  }
+  renderSchedulePanel();
+}
+
+function closeSchedulePanel() {
+  document.getElementById('sched-panel').classList.add('hidden');
+  document.getElementById('btn-schedule-panel').classList.remove('active');
+}
+
+document.getElementById('btn-schedule-panel').addEventListener('click', () => {
+  const panel = document.getElementById('sched-panel');
+  if (panel.classList.contains('hidden')) openSchedulePanel(); else closeSchedulePanel();
+});
+document.getElementById('sched-panel-close').addEventListener('click', closeSchedulePanel);
+
+// ── Drag the schedule panel by its header ──
+(function () {
+  const panel  = document.getElementById('sched-panel');
+  const header = document.getElementById('sched-panel-header');
+  let _dx = 0, _dy = 0, _dragging = false;
+
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('button')) return;
+    _dragging = true;
+    // Switch from right-anchored to left-anchored on first drag
+    if (panel.style.right !== '') {
+      const rect = panel.getBoundingClientRect();
+      panel.style.left  = rect.left + 'px';
+      panel.style.right = '';
+    }
+    const rect = panel.getBoundingClientRect();
+    _dx = e.clientX - rect.left;
+    _dy = e.clientY - rect.top;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!_dragging) return;
+    panel.style.left = Math.max(0, e.clientX - _dx) + 'px';
+    panel.style.top  = Math.max(0, e.clientY - _dy) + 'px';
+  });
+  document.addEventListener('mouseup', () => { _dragging = false; });
+})();
+
+
 
 // ─── Boot ─────────────────────────────────────────────
 loadState();

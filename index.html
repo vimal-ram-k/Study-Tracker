@@ -19,6 +19,9 @@
       <div class="header-actions">
         <div class="header-sprint-badge" id="header-sprint-badge" title="Current sprint"></div>
         <button class="btn btn-secondary" id="btn-add-epic">+ New Epic</button>
+        <button class="btn btn-secondary" id="btn-schedule-panel" title="View today's scheduled plans">
+          📅 Schedule
+        </button>
         <button class="btn btn-books" id="btn-books" title="Open Book Tracker">
           📚 Books
         </button>
@@ -271,6 +274,16 @@
     <!-- Kanban board / Grid view (shared container) -->
     <section class="epics-grid" id="epics-grid"></section>
   </main>
+
+  <!-- Schedule Panel — draggable floating window -->
+  <div class="sched-panel hidden" id="sched-panel">
+    <div class="sched-panel-header" id="sched-panel-header">
+      <span class="sched-panel-drag-hint">⠿</span>
+      <span class="sched-panel-title">📅 Today's Schedule</span>
+      <button class="btn btn-ghost btn-icon" id="sched-panel-close" title="Close">✕</button>
+    </div>
+    <div class="sched-panel-body" id="sched-panel-body"></div>
+  </div>
 
   <!-- Subtask Panel — draggable + resizable floating window -->
   <div class="subtask-panel hidden" id="subtask-panel">
