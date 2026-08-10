@@ -341,12 +341,20 @@ async function _pickFolder() {
 // ═══════════════════════════════════════════════════
 
 window._onSaveState = function () {
-  if (_dbFolder) _writeXL();   // async, fire-and-forget
+  if (_dbFolder) _scheduleWrite();   // debounced, fire-and-forget
 };
 
 // ═══════════════════════════════════════════════════
 // WRITE tracker.xlsx INTO THE db/ FOLDER
 // ═══════════════════════════════════════════════════
+
+// Debounce writes: if many saves fire in quick succession (e.g. multi-task drag),
+// collapse them into a single write 300 ms after the last one.
+let _writeTimer = null;
+function _scheduleWrite() {
+  clearTimeout(_writeTimer);
+  _writeTimer = setTimeout(() => _writeXL(), 300);
+}
 
 async function _writeXL() {
   if (!_dbFolder) return false;
@@ -361,10 +369,11 @@ async function _writeXL() {
     await w.close();
     return true;
   } catch (e) {
-    _dbFolder = null;
-    try { await _idbDel(); } catch (_) {}
-    _setBtnActive(false);
-    showToast('⚠️ Excel write failed — click DB to reconnect');
+    // Do NOT null out _dbFolder — a transient error (e.g. file briefly locked)
+    // should not permanently disable auto-save.  Show a toast so the user knows,
+    // but keep the handle so the next save can retry.
+    const msg = e && e.message ? e.message : String(e);
+    showToast('⚠️ Excel write failed — ' + msg);
     return false;
   }
 }
