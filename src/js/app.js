@@ -133,10 +133,13 @@ function ensureCurrentSprint() {
   const end    = toISO(sat);
 
   const exists = state.sprints.find(s => s.startDate === start);
-  if (!exists) {
-    state.sprints.push({ id: uid(), name, goal: '', startDate: start, endDate: end, auto: true });
-    saveState();
-  }
+  if (exists) return;
+
+  // Don't auto-recreate a sprint the user explicitly deleted
+  if ((state.deletedSprintDates || []).includes(start)) return;
+
+  state.sprints.push({ id: uid(), name, goal: '', startDate: start, endDate: end, auto: true });
+  saveState();
 }
 
 function allSprints() {
@@ -1398,6 +1401,13 @@ function handleGridClick(e) {
     const spr = sprintById(id);
     openConfirm(`Delete sprint "${spr.name}"? Tasks will keep their sprint assignment.`, () => {
       if (selectedSprintId === id) selectedSprintId = null;
+      // Remember this sprint's startDate so ensureCurrentSprint won't recreate it
+      if (spr.startDate) {
+        if (!state.deletedSprintDates) state.deletedSprintDates = [];
+        if (!state.deletedSprintDates.includes(spr.startDate)) {
+          state.deletedSprintDates.push(spr.startDate);
+        }
+      }
       state.sprints = allSprints().filter(s => s.id !== id);
       saveState(); render();
       showToast('Sprint deleted.');
