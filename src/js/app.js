@@ -1151,6 +1151,11 @@ function openEpicModal(epic = null) {
   document.getElementById('epic-schedule-start').value = epic ? (epic.scheduleStart || '') : '';
   document.getElementById('epic-schedule-end').value = epic ? (epic.scheduleEnd || '') : '';
   populateEpicScheduleTaskSelect(epic);
+  // Show "Remove Schedule" button only when editing an epic that has a schedule
+  const hasSchedule = !!(epic?.scheduleEnabled || epic?.scheduleStart || epic?.scheduleEnd || epic?.scheduledTaskIds?.length);
+  document.getElementById('epic-remove-schedule').style.display = (epic && hasSchedule) ? '' : 'none';
+  // Show "Restore to To Do" button only when editing an existing epic
+  document.getElementById('epic-restore-todo').style.display = epic ? '' : 'none';
   document.getElementById('epic-modal').classList.remove('hidden');
   document.getElementById('epic-name').focus();
 }
@@ -1161,6 +1166,27 @@ function closeEpicModal() {
 
 document.getElementById('btn-add-epic').addEventListener('click', () => openEpicModal());
 document.getElementById('epic-cancel').addEventListener('click', closeEpicModal);
+document.getElementById('epic-remove-schedule').addEventListener('click', () => {
+  if (!epicEditId) return;
+  const epic = state.epics.find(e => e.id === epicEditId);
+  if (!epic) return;
+  epic.scheduleEnabled   = false;
+  epic.scheduleLabel     = '';
+  epic.scheduleStart     = '';
+  epic.scheduleEnd       = '';
+  epic.scheduledTaskIds  = [];
+  saveState(); closeEpicModal(); render();
+  showToast('Schedule removed.');
+});
+document.getElementById('epic-restore-todo').addEventListener('click', () => {
+  if (!epicEditId) return;
+  const epicTasks = allTasks().filter(t => t.epicId === epicEditId);
+  const epicTaskIds = epicTasks.map(t => t.id);
+  epicTasks.forEach(t => { t.status = 'To Do'; });
+  allSubtasks().filter(s => epicTaskIds.includes(s.taskId)).forEach(s => { s.status = 'To Do'; });
+  saveState(); closeEpicModal(); render();
+  showToast('All tasks & subtasks restored to To Do.');
+});
 document.getElementById('epic-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeEpicModal();
 });
@@ -1972,11 +1998,11 @@ function renderSubtaskPanel(context) {
         <span class="col-count">${items.length}</span>
       </div>
       <div class="col-body sub-col-body" id="sub-col-${col.id}">
-        ${items.length === 0
-          ? '<div class="col-empty">No subtasks here</div>'
-          : items.map(s => buildSubtaskCard(s)).join('')}
+        ${items.length === 0 ? '<div class="col-empty">No subtasks here</div>' : ''}
       </div>
     `;
+    const body = colEl.querySelector(`#sub-col-${col.id}`);
+    items.forEach(s => body.appendChild(buildSubtaskCard(s)));
     board.appendChild(colEl);
   });
 
@@ -1984,25 +2010,58 @@ function renderSubtaskPanel(context) {
 }
 
 function buildSubtaskCard(sub) {
-  const over = isOverdue(sub.dueDate, sub.status);
-  return `
-    <div class="kcard sub-kcard" draggable="true" data-sub-id="${sub.id}">
-      <div class="kcard-title" title="${esc(sub.name)}">${esc(sub.name)}</div>
-      ${sub.desc ? `<div class="kcard-sub">${esc(sub.desc)}</div>` : ''}
+  const over      = isOverdue(sub.dueDate, sub.status);
+  const expanded  = _expandedCards.has(sub.id);
+  const parentTask = allTasks().find(t => t.id === sub.taskId);
+  const active    = currentSprint();
+  const next      = nextSprint();
+  const inSprint  = active && parentTask?.sprintId === active.id;
+  const inNext    = next   && parentTask?.sprintId === next.id;
+  const assignedSpr = parentTask?.sprintId ? sprintById(parentTask.sprintId) : null;
+
+  const sprintBadge = assignedSpr
+    ? `<div class="task-sprint-badge${inNext ? ' task-sprint-badge--next' : ''}" title="${esc(assignedSpr.name)}">${inNext ? '🗓' : '⚡'} ${esc(assignedSpr.name)}</div>`
+    : '';
+
+  const el = document.createElement('div');
+  el.className = `kcard sub-kcard${expanded ? ' kcard--expanded' : ''}`;
+  el.draggable = true;
+  el.dataset.subId = sub.id;
+  el.innerHTML = `
+    <div class="kcard-title-row" data-sub-action="expand-sub" data-sub-id="${sub.id}">
+      <span class="kcard-chevron">${expanded ? '▾' : '▸'}</span>
+      <span class="kcard-title" title="${esc(sub.name)}">${esc(sub.name)}</span>
+    </div>
+    <div class="kcard-detail">
+      ${sprintBadge}
       <div class="kcard-meta">
         ${priorityBadge(sub.priority)}
         ${sub.assignee ? `<span class="kcard-assignee">👤 ${esc(sub.assignee)}</span>` : ''}
       </div>
-      ${sub.dueDate ? `
-        <div class="kcard-due ${over ? 'overdue' : ''}">
-          ${over ? '⚠️ ' : '📅 '}${formatDate(sub.dueDate)}
-        </div>` : ''}
+      ${sub.desc ? `<div class="kcard-sub">${esc(sub.desc)}</div>` : ''}
+      ${sub.dueDate ? `<div class="kcard-due ${over ? 'overdue' : ''}">${over ? '⚠️ ' : '📅 '}${formatDate(sub.dueDate)}</div>` : ''}
       <div class="kcard-actions">
+        <button class="btn btn-secondary btn-sm btn-today${sub.todayWork ? ' active' : ''}" data-sub-action="toggle-today-sub" data-sub-id="${sub.id}" title="${sub.todayWork ? 'Remove from today work' : 'Set as today work'}">${sub.todayWork ? '★ Today' : '☆ Today'}</button>
         <button class="btn btn-ghost btn-sm" data-sub-action="edit-subtask" data-sub-id="${sub.id}" title="Edit">Edit</button>
         <button class="btn btn-delete" data-sub-action="delete-subtask" data-sub-id="${sub.id}">Delete</button>
       </div>
     </div>
   `;
+
+  el.querySelector('[data-sub-action="expand-sub"]').addEventListener('click', e => {
+    e.stopPropagation();
+    if (_expandedCards.has(sub.id)) {
+      _expandedCards.delete(sub.id);
+      el.classList.remove('kcard--expanded');
+      el.querySelector('.kcard-chevron').textContent = '▸';
+    } else {
+      _expandedCards.add(sub.id);
+      el.classList.add('kcard--expanded');
+      el.querySelector('.kcard-chevron').textContent = '▾';
+    }
+  });
+
+  return el;
 }
 
 // ─── Subtask drag-drop (scoped to panel) ─────────────
@@ -2059,6 +2118,17 @@ document.getElementById('subtask-board').addEventListener('click', e => {
   const btn = e.target.closest('[data-sub-action]');
   if (!btn) return;
   const action = btn.dataset.subAction;
+  if (action === 'expand-sub') return; // handled by the card's own listener
+  if (action === 'toggle-today-sub') {
+    const sub = allSubtasks().find(s => s.id === btn.dataset.subId);
+    if (!sub) return;
+    sub.todayWork = !sub.todayWork;
+    saveState();
+    renderSubtaskPanel(_panelContext);
+    render();
+    showToast(sub.todayWork ? 'Marked for today work.' : 'Removed from today work.');
+    return;
+  }
   if (action === 'edit-subtask') {
     const sub = allSubtasks().find(s => s.id === btn.dataset.subId);
     if (sub) openSubtaskModal(sub.taskId, sub);

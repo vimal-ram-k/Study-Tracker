@@ -170,6 +170,9 @@ body {
 .btn-danger  { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-danger:hover  { background: var(--danger-hover); border-color: var(--danger-hover); }
 
+.btn-warning { background: #d97706; color: #fff; border-color: #d97706; }
+.btn-warning:hover { background: #b45309; border-color: #b45309; }
+
 .btn-delete {
   background: transparent;
   color: var(--muted);
