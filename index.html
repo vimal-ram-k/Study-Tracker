@@ -197,6 +197,28 @@
     </div>
   </div>
 
+  <!-- Category Modal -->
+  <div class="modal-overlay hidden" id="cat-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="cat-modal-title">New Category</h2>
+      <label class="form-label">Category Name *
+        <input type="text" class="form-input" id="cat-name" placeholder="e.g. EPIC, Backend, Frontend" maxlength="50" />
+      </label>
+      <label class="form-label">Color
+        <input type="color" class="form-input form-input--color" id="cat-color" value="#7c5cd8" />
+      </label>
+      <label class="form-label">Assign Epics <span style="font-size:11px;color:var(--muted)">(tick to include in this category)</span>
+        <div class="cat-epic-list" id="cat-epic-list">
+          <!-- populated by JS -->
+        </div>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="cat-cancel">Cancel</button>
+        <button class="btn btn-primary" id="cat-save">Save Category</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Confirm Delete Modal -->
   <div class="modal-overlay hidden" id="confirm-modal">
     <div class="modal modal--sm">
@@ -253,6 +275,20 @@
       </div>
     </div>
   </div>
+
+  <!-- Category side-drawer -->
+  <div class="cat-drawer" id="cat-drawer">
+    <div class="cat-drawer-inner" id="cat-drawer-inner">
+      <!-- populated by renderCategoryDrawer() -->
+    </div>
+    <!-- Toggle tab — always visible on the left edge -->
+    <button class="cat-drawer-tab" id="cat-drawer-tab" data-action="toggle-cat-drawer" title="Toggle categories">
+      <span class="cat-drawer-tab-icon">❮</span>
+      <span class="cat-drawer-tab-label">Categories</span>
+    </button>
+  </div>
+  <!-- Backdrop (closes drawer on outside click) -->
+  <div class="cat-drawer-backdrop hidden" id="cat-drawer-backdrop"></div>
 
   <!-- Main content -->
   <main class="main">

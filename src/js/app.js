@@ -21,12 +21,14 @@ const STATUS_LIST = COLUMNS.filter(c => c.status).map(c => c.status);
 
 // ─── State ───────────────────────────────────────────
 const STORAGE_KEY = 'dtt_data';
-let state = { epics: [], tasks: [], sprints: [] };
+let state = { epics: [], tasks: [], sprints: [], categories: [] };
 
 // Currently selected epic id — null means no selection
 let selectedEpicId = null;
 // Currently selected sprint id — null means no selection
 let selectedSprintId = null;
+// Currently selected category id — null means no filter
+let selectedCategoryId = null;
 
 // ─── View mode ───────────────────────────────────────
 let viewMode = 'board';            // 'board' | 'grid'
@@ -168,11 +170,31 @@ function tasksWithStatus(status) {
   let tasks = allTasks().filter(t => t.status === status);
   if (selectedSprintId) tasks = tasks.filter(t => t.sprintId === selectedSprintId);
   if (selectedEpicId)   tasks = tasks.filter(t => t.epicId   === selectedEpicId);
+  // category filter: restrict to epics in the selected category
+  if (selectedCategoryId && !selectedEpicId) {
+    const catEpicIds = (categoryById(selectedCategoryId)?.epicIds) || [];
+    tasks = tasks.filter(t => catEpicIds.includes(t.epicId));
+  }
   return tasks;
 }
 
 function epicById(id) {
   return state.epics.find(e => e.id === id);
+}
+
+// ─── Category helpers ─────────────────────────────────
+function allCategories() {
+  return state.categories || (state.categories = []);
+}
+function categoryById(id) {
+  return allCategories().find(c => c.id === id);
+}
+/** Return epics visible under the current category filter */
+function visibleEpics() {
+  if (!selectedCategoryId) return state.epics;
+  const cat = categoryById(selectedCategoryId);
+  if (!cat) return state.epics;
+  return state.epics.filter(e => (cat.epicIds || []).includes(e.id));
 }
 
 function priorityBadge(p) {
@@ -271,6 +293,10 @@ function renderSummary() {
   let tasks = allTasks();
   if (selectedSprintId) tasks = tasks.filter(t => t.sprintId === selectedSprintId);
   else if (selectedEpicId) tasks = tasks.filter(t => t.epicId === selectedEpicId);
+  else if (selectedCategoryId) {
+    const catEpicIds = (categoryById(selectedCategoryId)?.epicIds) || [];
+    tasks = tasks.filter(t => catEpicIds.includes(t.epicId));
+  }
 
   const selectedEpic   = selectedEpicId   ? epicById(selectedEpicId)     : null;
   const selectedSprint = selectedSprintId ? sprintById(selectedSprintId) : null;
@@ -286,11 +312,16 @@ function renderSummary() {
     ? allTasks().filter(t => t.sprintId === activeSprint.id).length
     : 0;
 
+  const selectedCat = selectedCategoryId ? categoryById(selectedCategoryId) : null;
+  const epicDisplayCount = selectedCat
+    ? state.epics.filter(e => (selectedCat.epicIds || []).includes(e.id)).length
+    : state.epics.length;
+
   document.getElementById('summary-bar').innerHTML = `
     <div class="stat-card accent">
-      <div class="stat-value">${state.epics.length}</div>
+      <div class="stat-value">${epicDisplayCount}</div>
       <div class="stat-label" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-start;">
-        ${selectedEpic ? `<span title="${esc(selectedEpic.name)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;display:inline-block;">${esc(selectedEpic.name)}</span>` : 'Epics'}
+        ${selectedEpic ? `<span title="${esc(selectedEpic.name)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;display:inline-block;">${esc(selectedEpic.name)}</span>` : selectedCat ? `📂 ${esc(selectedCat.name)}` : 'Epics'}
         ${selectedEpic ? `<button class="btn-clear-epic" data-action="clear-epic" title="Clear filter">✕ clear</button>` : ''}
       </div>
     </div>
@@ -303,7 +334,7 @@ function renderSummary() {
     </div>
     <div class="stat-card">
       <div class="stat-value">${total}</div>
-      <div class="stat-label">${selectedSprint ? 'Sprint Tasks' : selectedEpic ? 'Epic Tasks' : 'Total Tasks'}</div>
+      <div class="stat-label">${selectedSprint ? 'Sprint Tasks' : selectedEpic ? 'Epic Tasks' : selectedCat ? 'Category Tasks' : 'Total Tasks'}</div>
     </div>
     <div class="stat-card warn">
       <div class="stat-value">${inprog}</div>
@@ -337,12 +368,85 @@ function renderBoard() {
   });
 }
 
+// ── Category side-drawer ──────────────────────────────
+const CAT_COLORS = ['#7c5cd8','#0891b2','#d97706','#db2777','#16a34a','#dc2626','#2563eb','#ea580c'];
+
+let _catDrawerOpen = localStorage.getItem('dtt_cat_open') === '1';
+
+function _setCatDrawerOpen(v) {
+  _catDrawerOpen = v;
+  localStorage.setItem('dtt_cat_open', v ? '1' : '0');
+  const drawer   = document.getElementById('cat-drawer');
+  const backdrop = document.getElementById('cat-drawer-backdrop');
+  const icon     = document.querySelector('.cat-drawer-tab-icon');
+  if (!drawer) return;
+  if (v) {
+    drawer.classList.add('cat-drawer--open');
+    backdrop.classList.remove('hidden');
+    if (icon) icon.textContent = '❯';
+  } else {
+    drawer.classList.remove('cat-drawer--open');
+    backdrop.classList.add('hidden');
+    if (icon) icon.textContent = '❮';
+  }
+}
+
+function renderCategoryDrawer() {
+  const inner = document.getElementById('cat-drawer-inner');
+  if (!inner) return;
+  const cats = allCategories();
+
+  inner.innerHTML = `
+    <div class="cat-drawer-header">
+      <span class="cat-drawer-title">Categories</span>
+      <span class="cat-drawer-count">${cats.length}</span>
+    </div>
+    <div class="cat-drawer-body" id="col-categories"></div>
+    <div class="cat-drawer-footer">
+      <button class="btn-col-add" data-action="add-category">+ New Category</button>
+    </div>
+  `;
+
+  const body = inner.querySelector('#col-categories');
+
+  // "All" chip
+  const allChip = document.createElement('div');
+  allChip.className = `cat-item${!selectedCategoryId ? ' cat-item--active' : ''}`;
+  allChip.dataset.action = 'select-category';
+  allChip.dataset.id = '';
+  allChip.innerHTML = `<span class="cat-item-dot" style="background:#475569"></span><span class="cat-item-name">All</span>`;
+  body.appendChild(allChip);
+
+  cats.forEach(cat => {
+    const item = document.createElement('div');
+    item.className = `cat-item${selectedCategoryId === cat.id ? ' cat-item--active' : ''}`;
+    item.dataset.action = 'select-category';
+    item.dataset.id = cat.id;
+    const epicCount = state.epics.filter(e => (cat.epicIds || []).includes(e.id)).length;
+    item.innerHTML = `
+      <span class="cat-item-dot" style="background:${cat.color || '#7c5cd8'}"></span>
+      <span class="cat-item-name">${esc(cat.name)}</span>
+      <span class="cat-item-count">${epicCount}</span>
+      <button class="cat-item-edit" data-action="edit-category" data-id="${cat.id}" title="Edit category">✎</button>
+      <button class="cat-item-del"  data-action="delete-category" data-id="${cat.id}" title="Delete category">✕</button>
+    `;
+    body.appendChild(item);
+  });
+
+  if (cats.length === 0) {
+    body.innerHTML += '<div class="col-empty" style="min-height:60px">No categories yet.</div>';
+  }
+
+  // Apply open/closed state without animation on initial render
+  _setCatDrawerOpen(_catDrawerOpen);
+}
+
 // ── Epic column ──────────────────────────────────────
 function buildEpicColumn() {
   const col = document.createElement('div');
   col.className = 'kanban-col';
 
-  const epics = state.epics;
+  const epics = visibleEpics();
 
   const epicHdr = document.createElement('div');
   epicHdr.className = 'col-header';
@@ -351,7 +455,9 @@ function buildEpicColumn() {
   const epicBody = document.createElement('div');
   epicBody.className = 'col-body'; epicBody.id = 'col-epic';
   if (epics.length === 0) {
-    epicBody.innerHTML = '<div class="col-empty">No epics yet.<br>Click + New Epic to start.</div>';
+    epicBody.innerHTML = selectedCategoryId
+      ? '<div class="col-empty">No epics in this category.</div>'
+      : '<div class="col-empty">No epics yet.<br>Click + New Epic to start.</div>';
   } else {
     epics.forEach(e => epicBody.appendChild(buildEpicCard(e)));
   }
@@ -370,6 +476,12 @@ function buildEpicCard(epic) {
   const selected = selectedEpicId === epic.id;
   const expanded = _expandedCards.has(epic.id);
 
+  // Build category tag chips shown on card
+  const epicCats = allCategories().filter(c => (c.epicIds || []).includes(epic.id));
+  const catChips = epicCats.map(c =>
+    `<span class="epic-cat-chip" style="background:${c.color || '#7c5cd8'}22;border-color:${c.color || '#7c5cd8'}44;color:${c.color || '#7c5cd8'}">${esc(c.name)}</span>`
+  ).join('');
+
   const el = document.createElement('div');
   el.className = `kcard kcard-epic${selected ? ' kcard-selected' : ''}${expanded ? ' kcard--expanded' : ''}`;
   el.dataset.epicId = epic.id;
@@ -385,6 +497,7 @@ function buildEpicCard(epic) {
         <div class="kcard-meta">
           ${priorityBadge(epic.priority)}
           <span class="kcard-count">${total} task${total !== 1 ? 's' : ''}</span>
+          ${catChips}
         </div>
         <div class="kcard-progress">
           <div class="kprog-bar"><div class="kprog-fill" style="width:${pct}%"></div></div>
@@ -604,6 +717,7 @@ function buildTaskCard(task) {
 // ─── Full re-render ───────────────────────────────────
 function render() {
   renderHeaderSprintBadge();
+  renderCategoryDrawer();
   const summaryBar = document.getElementById('summary-bar');
   if (viewMode === 'grid') {
     summaryBar.style.display = 'none';
@@ -1366,6 +1480,43 @@ function handleGridClick(e) {
   if (!btn) return;
   const { action } = btn.dataset;
 
+  // ── Category drawer toggle ────────────────────────
+  if (action === 'toggle-cat-drawer') {
+    _setCatDrawerOpen(!_catDrawerOpen);
+    return;
+  }
+  // ── Category actions ──────────────────────────────
+  if (action === 'select-category') {
+    const id = btn.dataset.id;
+    selectedCategoryId = selectedCategoryId === id ? null : id || null;
+    // If id is '' (All chip), clear
+    if (!id) selectedCategoryId = null;
+    selectedEpicId   = null;
+    selectedSprintId = null;
+    render();
+    return;
+  }
+  if (action === 'add-category') {
+    openCategoryModal();
+    return;
+  }
+  if (action === 'edit-category') {
+    openCategoryModal(categoryById(btn.dataset.id));
+    return;
+  }
+  if (action === 'delete-category') {
+    const id  = btn.dataset.id;
+    const cat = categoryById(id);
+    openConfirm(`Delete category "${cat.name}"? Epics will not be deleted.`, () => {
+      if (selectedCategoryId === id) selectedCategoryId = null;
+      state.categories = allCategories().filter(c => c.id !== id);
+      saveState(); render();
+      showToast('Category deleted.');
+    });
+    return;
+  }
+  // ── end category actions ──────────────────────────
+
   if (action === 'select-sprint') {
     const id = btn.dataset.id;
     selectedSprintId = selectedSprintId === id ? null : id;
@@ -1432,6 +1583,10 @@ function handleGridClick(e) {
         if (selectedEpicId === id) selectedEpicId = null; // deselect if deleted
         state.epics = state.epics.filter(ep => ep.id !== id);
         state.tasks = allTasks().filter(t => t.epicId !== id);
+        // Remove this epic from any categories
+        allCategories().forEach(c => {
+          c.epicIds = (c.epicIds || []).filter(eid => eid !== id);
+        });
         saveState(); render();
         showToast('Epic deleted.');
       }
@@ -1487,6 +1642,61 @@ function handleGridClick(e) {
     });
   }
 }
+
+// ─── Category Modal ───────────────────────────────────
+let _catEditId = null;
+
+function openCategoryModal(cat = null) {
+  _catEditId = cat ? cat.id : null;
+  document.getElementById('cat-modal-title').textContent = cat ? 'Edit Category' : 'New Category';
+  document.getElementById('cat-name').value  = cat ? cat.name  : '';
+  document.getElementById('cat-color').value = cat ? (cat.color || '#7c5cd8') : '#7c5cd8';
+
+  // Populate epic checkboxes
+  const listEl = document.getElementById('cat-epic-list');
+  listEl.innerHTML = '';
+  const assignedIds = cat?.epicIds || [];
+  state.epics.forEach(epic => {
+    const checked = assignedIds.includes(epic.id) ? 'checked' : '';
+    const item = document.createElement('label');
+    item.className = 'cat-epic-item';
+    item.innerHTML = `<input type="checkbox" value="${epic.id}" ${checked} /> ${esc(epic.name)}`;
+    listEl.appendChild(item);
+  });
+  if (state.epics.length === 0) {
+    listEl.innerHTML = '<span class="cat-epic-empty">No epics yet</span>';
+  }
+
+  document.getElementById('cat-modal').classList.remove('hidden');
+  document.getElementById('cat-name').focus();
+}
+
+function closeCategoryModal() {
+  document.getElementById('cat-modal').classList.add('hidden');
+}
+
+document.getElementById('cat-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeCategoryModal();
+});
+document.getElementById('cat-cancel').addEventListener('click', closeCategoryModal);
+document.getElementById('cat-save').addEventListener('click', () => {
+  const name = document.getElementById('cat-name').value.trim();
+  if (!name) { showToast('Category name is required.'); return; }
+  const color   = document.getElementById('cat-color').value;
+  const epicIds = Array.from(document.querySelectorAll('#cat-epic-list input[type="checkbox"]:checked'))
+                       .map(cb => cb.value);
+
+  if (_catEditId) {
+    const cat = categoryById(_catEditId);
+    cat.name    = name;
+    cat.color   = color;
+    cat.epicIds = epicIds;
+  } else {
+    allCategories().push({ id: uid(), name, color, epicIds });
+  }
+  saveState(); closeCategoryModal(); render();
+  showToast(_catEditId ? 'Category updated.' : 'Category created!');
+});
 
 // ─── Sprint Modal ─────────────────────────────────────
 function openSprintModal(sprint = null) {
@@ -2641,6 +2851,16 @@ document.addEventListener('keydown', e => {
 // We append our refresh to that hook after all scripts have loaded
 // (excel.js sets _onSaveState during its own evaluation, which happens
 //  immediately after app.js since both are synchronous <script> tags).
+// Backdrop click closes the drawer
+document.getElementById('cat-drawer-backdrop').addEventListener('click', () => {
+  _setCatDrawerOpen(false);
+});
+
+// The tab button lives outside #epics-grid, so wire it directly
+document.getElementById('cat-drawer-tab').addEventListener('click', () => {
+  _setCatDrawerOpen(!_catDrawerOpen);
+});
+
 window.addEventListener('load', () => {
   const _existingHook = window._onSaveState;
   window._onSaveState = function () {

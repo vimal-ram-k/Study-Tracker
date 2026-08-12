@@ -208,7 +208,7 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 16px 20px 12px;
+  padding: 16px 20px 12px 48px; /* 48px = 28px tab + 20px original left gap */
   overflow: hidden;
   min-height: 0;
   width: 100%;
@@ -327,6 +327,245 @@ body {
   transition: background .12s, border-color .12s;
 }
 .btn-col-add:hover { background: var(--bg); border-color: var(--border-strong); color: var(--text); }
+
+/* ===== Category side-drawer ===== */
+.cat-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 200px;
+  z-index: 200;
+  /* Slide fully off-screen to the left (only the tab peeks out) */
+  transform: translateX(calc(-100% + 28px));
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+  display: flex;
+  flex-direction: row;
+  pointer-events: auto;
+}
+
+.cat-drawer--open {
+  transform: translateX(0);
+}
+
+/* The sliding panel itself */
+.cat-drawer-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Always-visible toggle tab on the right edge of the drawer */
+.cat-drawer-tab {
+  width: 28px;
+  flex-shrink: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: none;
+  border-left: 1px solid var(--glass-border);
+  border-right: 1px solid var(--glass-border);
+  cursor: pointer;
+  padding: 0;
+  color: var(--muted);
+  box-shadow: var(--glass-shadow);
+  transition: background .15s, color .15s;
+}
+.cat-drawer-tab:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.cat-drawer-tab-icon {
+  font-size: 10px;
+  line-height: 1;
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+}
+.cat-drawer-tab-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* Drawer inner layout */
+.cat-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 2px solid var(--border-strong);
+  flex-shrink: 0;
+}
+.cat-drawer-title {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text);
+  flex: 1;
+}
+.cat-drawer-count {
+  background: var(--glass-bg2);
+  border: 1px solid var(--glass-border);
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 8px;
+  color: var(--muted);
+}
+.cat-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.cat-drawer-body::-webkit-scrollbar { display: none; }
+.cat-drawer-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Semi-transparent backdrop */
+.cat-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: transparent;
+  pointer-events: auto;
+}
+
+/* Category list item */
+.cat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  transition: background .12s;
+  position: relative;
+  user-select: none;
+}
+.cat-item:hover {
+  background: var(--surface2);
+}
+.cat-item--active {
+  background: var(--surface2);
+  border: 1px solid var(--border-strong);
+}
+.cat-item--active .cat-item-dot {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px currentColor;
+}
+.cat-item-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cat-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat-item-count {
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+.cat-item-edit,
+.cat-item-del {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.cat-item:hover .cat-item-edit,
+.cat-item:hover .cat-item-del { display: flex; }
+.cat-item-del:hover  { color: var(--danger); background: #fff0f0; }
+.cat-item-edit:hover { color: var(--accent); background: var(--surface2); }
+[data-theme="dark"] .cat-item-del:hover  { background: #2d1418; color: #f87171; }
+
+/* Epic category chip (shown on epic cards) */
+.epic-cat-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  letter-spacing: .2px;
+}
+
+/* Category modal — epic checkbox list */
+.cat-epic-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cat-epic-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 3px 0;
+}
+.cat-epic-item input[type="checkbox"] { cursor: pointer; }
+.cat-epic-empty {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+.form-input--color {
+  height: 36px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
 
 .col-empty {
   text-align: center;
