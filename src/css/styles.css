@@ -86,16 +86,13 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 120;
+  z-index: 300;
+  /* shell itself has no pointer events — only the visible header bar does */
   pointer-events: none;
 }
+/* Hover zone is removed — the header peeks 4px so it can be hovered directly */
 .header-hover-zone {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 24px;
-  pointer-events: auto;
+  display: none;
 }
 .header {
   background: var(--glass-bg);
@@ -104,12 +101,12 @@ body {
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   position: relative;
-  transform: translateY(-100%);
+  /* Peek 4px so the mouse can reach it without a blocking invisible strip */
+  transform: translateY(calc(-100% + 4px));
   opacity: 0;
-  transition: transform .2s ease, opacity .2s ease;
+  transition: transform .22s ease, opacity .22s ease;
   pointer-events: auto;
 }
-.header-shell:hover .header,
 .header:hover {
   transform: translateY(0);
   opacity: 1;
@@ -455,6 +452,9 @@ body {
   z-index: 199;
   background: transparent;
   pointer-events: auto;
+}
+.cat-drawer-backdrop.hidden {
+  display: none;
 }
 
 /* Category list item */

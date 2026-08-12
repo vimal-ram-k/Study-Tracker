@@ -227,12 +227,41 @@ function getTodayWorkTasksForEpic(epicId) {
   return allTasks().filter(task => task.epicId === epicId && isTodayWorkTask(task) && task.status !== 'Done');
 }
 
-function isTodayWorkWarning(task, epic) {
-  if (!task || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
-  if (task.status === 'Done' || !isTodayWorkTask(task)) return false;
+/** True if the epic has any incomplete today-work task OR subtask, and schedule end has passed. */
+function _epicHasMissedTodayWork(epic) {
+  if (!epic?.scheduleStart || !epic?.scheduleEnd) return false;
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  return currentMinutes >= parseTimeToMinutes(epic.scheduleEnd);
+  if (currentMinutes < parseTimeToMinutes(epic.scheduleEnd)) return false;
+
+  // Check tasks with todayWork flag
+  const todayTasks = allTasks().filter(
+    t => t.epicId === epic.id && t.todayWork && t.status !== 'Done'
+  );
+  if (todayTasks.length) return true;
+
+  // Check subtasks with todayWork flag (under any task of this epic)
+  const epicTaskIds = allTasks().filter(t => t.epicId === epic.id).map(t => t.id);
+  const todaySubtasks = allSubtasks().filter(
+    s => epicTaskIds.includes(s.taskId) && s.todayWork && s.status !== 'Done'
+  );
+  return todaySubtasks.length > 0;
+}
+
+function isTodayWorkWarning(task, epic) {
+  if (!task || !epic?.scheduleStart || !epic?.scheduleEnd) return false;
+  if (task.status === 'Done') return false;
+  // Task-level: task itself has todayWork
+  if (task.todayWork) {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return currentMinutes >= parseTimeToMinutes(epic.scheduleEnd);
+  }
+  // Subtask-level: any incomplete subtask of this task has todayWork
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  if (currentMinutes < parseTimeToMinutes(epic.scheduleEnd)) return false;
+  return allSubtasks().some(s => s.taskId === task.id && s.todayWork && s.status !== 'Done');
 }
 
 function esc(str) {
@@ -260,21 +289,9 @@ function getScheduledTasksForEpic(epicId) {
 }
 
 function isScheduleMissed(epic) {
-  if (!epic?.scheduleStart || !epic?.scheduleEnd) return false;
-
-  const todayTasks = getTodayWorkTasksForEpic(epic.id);
-  if (todayTasks.length) {
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    return currentMinutes >= parseTimeToMinutes(epic.scheduleEnd);
-  }
-
-  const scheduledTasks = getScheduledTasksForEpic(epic.id);
-  const incomplete = scheduledTasks.filter(task => task.status !== 'Done');
-  if (!scheduledTasks.length || !incomplete.length) return false;
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  return currentMinutes >= parseTimeToMinutes(epic.scheduleEnd);
+  // Red only when: epic has a schedule AND current time > scheduleEnd
+  // AND there is at least one incomplete task or subtask marked ☆ Today
+  return _epicHasMissedTodayWork(epic);
 }
 
 function buildSubtaskSummaryHtml(total, done) {
@@ -744,8 +761,14 @@ const GV_COLS = COLUMNS.filter(c => c.status);
 function renderGridPicker() {
   const chips = document.getElementById('gv-picker-chips');
   const sharedSelect = document.getElementById('gv-shared-sprint-select');
+
+  // Scope epic list to active category
+  const categoryEpics = selectedCategoryId
+    ? state.epics.filter(e => (categoryById(selectedCategoryId)?.epicIds || []).includes(e.id))
+    : state.epics;
+
   chips.innerHTML = '';
-  state.epics.forEach(epic => {
+  categoryEpics.forEach(epic => {
     const on  = gridSelectedEpics.has(epic.id);
     const btn = document.createElement('button');
     btn.className   = 'gv-chip' + (on ? ' gv-chip--on' : '');
@@ -779,9 +802,12 @@ function renderGridView() {
 
   renderGridPicker();
 
-  // Default: select all if nothing chosen yet
+  // Default: select all epics in the active category (or all epics) if nothing chosen
   if (gridSelectedEpics.size === 0 && state.epics.length > 0) {
-    state.epics.forEach(e => gridSelectedEpics.add(e.id));
+    const categoryEpics = selectedCategoryId
+      ? state.epics.filter(e => (categoryById(selectedCategoryId)?.epicIds || []).includes(e.id))
+      : state.epics;
+    categoryEpics.forEach(e => gridSelectedEpics.add(e.id));
     renderGridPicker();
   }
 
@@ -1463,6 +1489,9 @@ document.getElementById('confirm-ok').addEventListener('click', () => {
 
 // ─── Delegated events on board + summary bar ─────────
 document.getElementById('epics-grid').addEventListener('click', handleGridClick);
+
+// Category drawer lives outside #epics-grid — wire its own delegated listener
+document.getElementById('cat-drawer-inner').addEventListener('click', handleGridClick);
 // Redraw connector when columns are scrolled (cards shift vertically)
 document.getElementById('epics-grid').addEventListener('scroll', drawConnector, { passive: true });
 
@@ -1488,11 +1517,13 @@ function handleGridClick(e) {
   // ── Category actions ──────────────────────────────
   if (action === 'select-category') {
     const id = btn.dataset.id;
-    selectedCategoryId = selectedCategoryId === id ? null : id || null;
-    // If id is '' (All chip), clear
-    if (!id) selectedCategoryId = null;
+    selectedCategoryId = (!id || selectedCategoryId === id) ? null : id;
     selectedEpicId   = null;
     selectedSprintId = null;
+    // In grid view, clear selection so renderGridView re-scopes to new category
+    if (viewMode === 'grid') gridSelectedEpics.clear();
+    // Close the drawer after selection
+    _setCatDrawerOpen(false);
     render();
     return;
   }
