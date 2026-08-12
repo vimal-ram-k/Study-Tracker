@@ -123,10 +123,11 @@ async function _readXL() {
 
     // Merge into state and persist to localStorage only — do NOT call saveState()
     // because that triggers _onSaveState → _writeXL() and overwrites the sheet we just read.
-    state.epics    = imported.epics;
-    state.tasks    = imported.tasks;
-    state.sprints  = imported.sprints;
-    state.subtasks = imported.subtasks;
+    state.epics      = imported.epics;
+    state.tasks      = imported.tasks;
+    state.sprints    = imported.sprints;
+    state.subtasks   = imported.subtasks;
+    state.categories = imported.categories;
     localStorage.setItem('dtt_data', JSON.stringify(state));
     render();
     showToast('📊 Loaded data from tracker.xlsx');
@@ -250,7 +251,25 @@ function _parseWorkbook(wb) {
       };
     });
 
-  return { epics, tasks, sprints, subtasks };
+  // --- Categories ---
+  // Each row: Category | Color | Epic IDs (comma-separated) | __id
+  const catRows = sheetRows('Categories');
+  const categories = catRows
+    .filter(r => r['Category'] && r['Category'] !== 'No categories yet')
+    .map(r => {
+      const rawIds = r['Epic IDs'];
+      const epicIds = rawIds && String(rawIds).trim()
+        ? String(rawIds).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+      return {
+        id:      r['__id']      || uid(),
+        name:    r['Category']  || '',
+        color:   r['Color']     || '#7c5cd8',
+        epicIds,
+      };
+    });
+
+  return { epics, tasks, sprints, subtasks, categories };
 }
 
 // Convert an Excel date cell value (JS Date, ISO string, or locale string) to YYYY-MM-DD or ''
@@ -400,10 +419,11 @@ document.getElementById('btn-export').addEventListener('click', () => {
 function _buildWorkbook() {
   const X  = _xlsx();
   const wb = X.utils.book_new();
-  X.utils.book_append_sheet(wb, _ws(_tasksRows()),    'Tasks');
-  X.utils.book_append_sheet(wb, _ws(_sprintsRows()),  'Sprints');
-  X.utils.book_append_sheet(wb, _ws(_epicsRows()),    'Epics');
-  X.utils.book_append_sheet(wb, _ws(_subtasksRows()), 'Subtasks');
+  X.utils.book_append_sheet(wb, _ws(_tasksRows()),      'Tasks');
+  X.utils.book_append_sheet(wb, _ws(_sprintsRows()),    'Sprints');
+  X.utils.book_append_sheet(wb, _ws(_epicsRows()),      'Epics');
+  X.utils.book_append_sheet(wb, _ws(_subtasksRows()),   'Subtasks');
+  X.utils.book_append_sheet(wb, _ws(_categoriesRows()), 'Categories');
   return wb;
 }
 
@@ -519,6 +539,21 @@ function _subtasksRows() {
     ]);
   });
   if (rows.length === 1) rows.push(['No subtasks yet']);
+  return rows;
+}
+
+// ─── Categories sheet ─────────────────────────────────
+function _categoriesRows() {
+  const rows = [['Category', 'Color', 'Epic IDs', '__id']];
+  (state.categories || []).forEach(c => {
+    rows.push([
+      c.name  || '',
+      c.color || '#7c5cd8',
+      Array.isArray(c.epicIds) ? c.epicIds.join(',') : '',
+      c.id,
+    ]);
+  });
+  if (rows.length === 1) rows.push(['No categories yet']);
   return rows;
 }
 
