@@ -65,7 +65,8 @@
 TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
 
 git add .
-git commit -m "$TIMESTAMP"</string>
+git commit -m "$TIMESTAMP"
+git push -u origin main</string>
 					<key>CheckedForUserDefaultShell</key>
 					<true/>
 					<key>inputMethod</key>
