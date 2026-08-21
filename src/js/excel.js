@@ -177,7 +177,7 @@ function _parseWorkbook(wb) {
         desc:             r['Description'] || '',
         priority:         r['Priority']    || 'Medium',
         createdAt:        r['Created']     || existing.createdAt || new Date().toISOString(),
-        scheduleEnabled:  r['Schedule Enabled'] === 'TRUE',
+        scheduleEnabled:  String(r['Schedule Enabled'] || '').toUpperCase() === 'TRUE' || r['Schedule Enabled'] === true,
         scheduleLabel:    r['Schedule Label']  || '',
         scheduleStart:    r['Schedule Start']  || '',
         scheduleEnd:      r['Schedule End']    || '',

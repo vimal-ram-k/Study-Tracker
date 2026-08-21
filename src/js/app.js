@@ -513,6 +513,7 @@ function buildEpicCard(epic) {
         ${epic.desc ? `<div class="kcard-sub">${esc(epic.desc)}</div>` : ''}
         <div class="kcard-meta">
           ${priorityBadge(epic.priority)}
+          ${(epic.scheduleStart && epic.scheduleEnd) ? `<span class="gv-pane-schedule" style="margin-left:4px">⏰ ${esc(epic.scheduleStart)}–${esc(epic.scheduleEnd)}</span>` : ''}
           <span class="kcard-count">${total} task${total !== 1 ? 's' : ''}</span>
           ${catChips}
         </div>
@@ -2458,11 +2459,15 @@ function _schedPanelRows() {
   (state.epics || [])
     .filter(e => e.scheduleStart && e.scheduleEnd)
     .forEach(e => {
+      const scheduledTasks = (e.scheduledTaskIds || [])
+        .map(id => (state.tasks || []).find(t => t.id === id))
+        .filter(Boolean);
       rows.push({
         type:     'epic',
-        label:    e.scheduleLabel ? e.scheduleLabel : e.name,
+        label:    e.scheduleLabel ? `${e.name} (${e.scheduleLabel})` : e.name,
         time:     `${e.scheduleStart}–${e.scheduleEnd}`,
         startMin: parseTimeToMinutes(e.scheduleStart),
+        tasks:    scheduledTasks,
       });
     });
 
@@ -2476,6 +2481,7 @@ function _schedPanelRows() {
           label:    b.title,
           time:     `${b.schedStart}–${b.schedEnd}`,
           startMin: parseTimeToMinutes(b.schedStart),
+          tasks:    [],
         });
       });
   }
@@ -2496,10 +2502,13 @@ function renderSchedulePanel() {
 
   const tableRows = rows.map(r => {
     const icon = r.type === 'book' ? '📖' : '🎯';
+    const tasksHtml = r.tasks && r.tasks.length
+      ? `<div style="font-size:11px;opacity:0.85;margin-top:3px;color:#a5b4fc;">↳ ${r.tasks.map(t => esc(t.name)).join(', ')}</div>`
+      : '';
     return `<tr class="sched-row">
       <td class="sched-td-time">${esc(r.time)}</td>
       <td class="sched-td-icon">${icon}</td>
-      <td class="sched-td-label">${esc(r.label)}</td>
+      <td class="sched-td-label"><strong>${esc(r.label)}</strong>${tasksHtml}</td>
     </tr>`;
   }).join('');
 
