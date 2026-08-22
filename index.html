@@ -236,10 +236,11 @@
       <h2 class="modal-title" id="subtask-modal-title">Add Subtask</h2>
       <input type="hidden" id="subtask-task-id" />
       <input type="hidden" id="subtask-edit-id" />
-      <label class="form-label">Subtask Name *
-        <input type="text" class="form-input" id="subtask-name" placeholder="e.g. Write unit tests" maxlength="120" />
+      <label class="form-label" id="subtask-name-label">Subtask Name *
+        <textarea class="form-input form-textarea task-name-area" id="subtask-name" placeholder="One subtask per line — e.g.&#10;Write unit tests&#10;Update documentation&#10;Code review" rows="3"></textarea>
+        <span class="task-bulk-hint" id="subtask-bulk-hint"></span>
       </label>
-      <label class="form-label">Description
+      <label class="form-label" id="subtask-desc-label">Description <span class="subtask-desc-note task-desc-note">(applied to all subtasks)</span>
         <textarea class="form-input form-textarea" id="subtask-desc" placeholder="Details…" rows="2"></textarea>
       </label>
       <div class="form-row">

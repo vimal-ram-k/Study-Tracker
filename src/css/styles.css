@@ -307,6 +307,11 @@ body {
   flex-direction: column;
   gap: 8px;
   min-height: 80px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.col-body::-webkit-scrollbar {
+  display: none;
 }
 .col-body.drag-over {
   background: rgba(124,92,216,.08);
@@ -830,7 +835,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  z-index: 1000;
   padding: 16px;
 }
 .modal-overlay.hidden { display: none; }
@@ -906,7 +911,7 @@ body {
   border-radius: var(--radius);
   font-size: 13px;
   font-weight: 600;
-  z-index: 300;
+  z-index: 1100;
   box-shadow: var(--shadow);
   transition: opacity .3s;
 }

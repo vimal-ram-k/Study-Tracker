@@ -2400,22 +2400,65 @@ document.getElementById('subtask-board').addEventListener('click', e => {
 
 // ─── Subtask Modal ────────────────────────────────────
 function openSubtaskModal(taskId, sub = null) {
-  document.getElementById('subtask-modal-title').textContent = sub ? 'Edit Subtask' : 'Add Subtask';
+  const isEdit  = !!sub;
+  const nameEl  = document.getElementById('subtask-name');
+  const hintEl  = document.getElementById('subtask-bulk-hint');
+  const noteEl  = document.querySelector('.subtask-desc-note');
+
+  document.getElementById('subtask-modal-title').textContent = isEdit ? 'Edit Subtask' : 'Add Subtask';
   document.getElementById('subtask-task-id').value    = taskId;
-  document.getElementById('subtask-edit-id').value    = sub ? sub.id      : '';
-  document.getElementById('subtask-name').value       = sub ? sub.name    : '';
-  document.getElementById('subtask-desc').value       = sub ? sub.desc    : '';
-  document.getElementById('subtask-assignee').value   = sub ? sub.assignee: '';
-  document.getElementById('subtask-due').value        = sub ? sub.dueDate : '';
-  document.getElementById('subtask-priority').value   = sub ? sub.priority: 'Medium';
-  document.getElementById('subtask-status').value     = sub ? sub.status  : 'To Do';
+  document.getElementById('subtask-edit-id').value    = isEdit ? sub.id      : '';
+  nameEl.value                                        = isEdit ? sub.name    : '';
+  document.getElementById('subtask-desc').value       = isEdit ? sub.desc    : '';
+  document.getElementById('subtask-assignee').value   = isEdit ? sub.assignee: '';
+  document.getElementById('subtask-due').value        = isEdit ? sub.dueDate : '';
+  document.getElementById('subtask-priority').value   = isEdit ? sub.priority: 'Medium';
+  document.getElementById('subtask-status').value     = isEdit ? sub.status  : 'To Do';
+
+  if (isEdit) {
+    nameEl.rows        = 1;
+    nameEl.placeholder = 'Subtask name';
+    if (hintEl) hintEl.textContent = '';
+    if (noteEl) noteEl.style.display = 'none';
+  } else {
+    nameEl.rows        = 3;
+    nameEl.placeholder = 'One subtask per line — e.g.\nWrite unit tests\nUpdate documentation\nCode review';
+    if (noteEl) noteEl.style.display = '';
+    _updateSubtaskBulkHint();
+  }
+
   document.getElementById('subtask-modal').classList.remove('hidden');
-  document.getElementById('subtask-name').focus();
+  nameEl.focus();
+}
+
+function _subtaskLines() {
+  return document.getElementById('subtask-name').value
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
+}
+
+function _updateSubtaskBulkHint() {
+  const lines  = _subtaskLines();
+  const hintEl = document.getElementById('subtask-bulk-hint');
+  const editId = document.getElementById('subtask-edit-id').value;
+  if (!hintEl) return;
+  if (editId) { hintEl.textContent = ''; return; }
+  if (lines.length > 1) {
+    hintEl.textContent = `↵ ${lines.length} subtasks will be created`;
+    hintEl.className   = 'task-bulk-hint task-bulk-hint--active';
+  } else {
+    hintEl.textContent = '';
+    hintEl.className   = 'task-bulk-hint';
+  }
 }
 
 function closeSubtaskModal() {
   document.getElementById('subtask-modal').classList.add('hidden');
 }
+
+// Live bulk hint update
+document.getElementById('subtask-name').addEventListener('input', _updateSubtaskBulkHint);
 
 document.getElementById('subtask-cancel').addEventListener('click', closeSubtaskModal);
 document.getElementById('subtask-modal').addEventListener('click', e => {
@@ -2423,24 +2466,31 @@ document.getElementById('subtask-modal').addEventListener('click', e => {
 });
 
 document.getElementById('subtask-save').addEventListener('click', () => {
-  const name = document.getElementById('subtask-name').value.trim();
-  if (!name) { showToast('Subtask name is required.'); return; }
   const taskId = document.getElementById('subtask-task-id').value;
   const editId = document.getElementById('subtask-edit-id').value;
-  const data = {
-    name,
+  const now    = new Date().toISOString();
+
+  const sharedData = {
     desc:     document.getElementById('subtask-desc').value.trim(),
     assignee: document.getElementById('subtask-assignee').value.trim(),
     dueDate:  document.getElementById('subtask-due').value,
     priority: document.getElementById('subtask-priority').value,
     status:   document.getElementById('subtask-status').value,
   };
+
   if (editId) {
-    Object.assign(allSubtasks().find(s => s.id === editId), data, { updatedAt: new Date().toISOString() });
+    const name = document.getElementById('subtask-name').value.trim();
+    if (!name) { showToast('Subtask name is required.'); return; }
+    Object.assign(allSubtasks().find(s => s.id === editId), { name, ...sharedData, updatedAt: now });
     showToast('Subtask updated.');
   } else {
-    allSubtasks().push({ id: uid(), taskId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...data });
-    showToast('Subtask added!');
+    const lines = _subtaskLines();
+    if (!lines.length) { showToast('Enter at least one subtask name.'); return; }
+
+    lines.forEach(name => {
+      allSubtasks().push({ id: uid(), taskId, name, createdAt: now, updatedAt: now, ...sharedData });
+    });
+    showToast(lines.length > 1 ? `✅ ${lines.length} subtasks created!` : '✅ Subtask added!');
   }
   saveState();
   closeSubtaskModal();
