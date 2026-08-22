@@ -25,14 +25,29 @@
 
 'use strict';
 
-// ─── SheetJS readiness guard ──────────────────────────
+// ─── SheetJS readiness guard & async awaiter ──────────
 function _xlsx() {
   if (!window.XLSX) throw new Error('SheetJS not loaded');
   return window.XLSX;
 }
 
+function _waitForXlsx(timeoutMs = 4000) {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise(resolve => {
+    const start = Date.now();
+    const timer = setInterval(() => {
+      if (window.XLSX || Date.now() - start > timeoutMs) {
+        clearInterval(timer);
+        resolve(window.XLSX || null);
+      }
+    }, 50);
+  });
+}
+
 // ─── Folder handle for db/ ────────────────────────────
 let _dbFolder = null;
+let _storedHandle = null;
+let _isReading = false;
 const _FS_OK  = typeof window.showDirectoryPicker === 'function';
 
 // ─── IndexedDB — persist handle across page loads ─────
@@ -71,29 +86,80 @@ async function _idbDel() {
   });
 }
 
+// ─── Apply parsed workbook into in-memory state & localStorage ─
+function _applyWorkbook(wb, sourceMsg) {
+  const imported = _parseWorkbook(wb);
+  const hasData = (imported.epics && imported.epics.length) ||
+                  (imported.tasks && imported.tasks.length) ||
+                  (imported.sprints && imported.sprints.length) ||
+                  (imported.subtasks && imported.subtasks.length);
+  if (!hasData) return false;
+
+  state.epics      = imported.epics;
+  state.tasks      = imported.tasks;
+  state.sprints    = imported.sprints;
+  state.subtasks   = imported.subtasks;
+  state.categories = imported.categories || [];
+  localStorage.setItem('dtt_data', JSON.stringify(state));
+  if (typeof render === 'function') render();
+  if (sourceMsg) showToast(sourceMsg);
+  return true;
+}
+
+// ─── Try loading tracker.xlsx over HTTP fetch (e.g. localhost server) ─
+async function _tryFetchXL() {
+  if (!window.location.protocol.startsWith('http')) return false;
+  try {
+    const res = await fetch('db/tracker.xlsx', { cache: 'no-cache' });
+    if (!res.ok) return false;
+    const buf = await res.arrayBuffer();
+    const X = _xlsx();
+    const wb = X.read(buf, { type: 'array', cellDates: true });
+    return _applyWorkbook(wb, '📊 Loaded data from db/tracker.xlsx');
+  } catch (_) {
+    return false;
+  }
+}
+
 // ═══════════════════════════════════════════════════
-// AUTO-RECONNECT ON PAGE LOAD
+// AUTO-LOAD ON PAGE LOAD
 // ═══════════════════════════════════════════════════
 
 (async function _xlBoot() {
+  await _waitForXlsx();
+
+  // 1. If running on a local web server (http://), fetch tracker.xlsx directly
+  try {
+    await _tryFetchXL();
+  } catch (_) {}
+
   if (!_FS_OK) return;
 
+  // 2. Retrieve folder handle from IndexedDB
   let handle;
   try { handle = await _idbGet(); } catch (_) { return; }
   if (!handle) return;
+  _storedHandle = handle;
 
+  // 3. Check permission silently without triggering browser dialog
   let perm;
   try { perm = await handle.queryPermission({ mode: 'readwrite' }); }
   catch (_) { perm = 'denied'; }
 
   if (perm === 'granted') {
-    _dbFolder = handle;
-    _setBtnActive(true);
-    await _readXL();    // load data FROM tracker.xlsx into app state on page load
-  } else if (perm === 'prompt') {
-    _showReconnectBanner(handle);
-  } else {
-    try { await _idbDel(); } catch (_) {}
+    // If permission is already granted, verify and load tracker.xlsx
+    try {
+      await handle.getFileHandle('tracker.xlsx', { create: false });
+      _dbFolder = handle;
+      _setBtnActive(true);
+      _removeReconnectBanner();
+      await _readXL();
+    } catch (err) {
+      if (err && err.name === 'NotFoundError') {
+        // Folder connected, but tracker.xlsx not found in db/
+        _showMissingFilePrompt(handle);
+      }
+    }
   }
 })();
 
@@ -102,7 +168,8 @@ async function _idbDel() {
 // ═══════════════════════════════════════════════════
 
 async function _readXL() {
-  if (!_dbFolder) return;
+  if (!_dbFolder || _isReading) return;
+  _isReading = true;
   try {
     const fh  = await _dbFolder.getFileHandle('tracker.xlsx', { create: false });
     const file = await fh.getFile();
@@ -110,34 +177,20 @@ async function _readXL() {
     const X    = _xlsx();
     const wb   = X.read(buf, { type: 'array', cellDates: true });
 
-    const imported = _parseWorkbook(wb);
-
-    // Only import if the sheet actually has meaningful data
-    const hasData = imported.epics.length || imported.tasks.length ||
-                    imported.sprints.length || imported.subtasks.length;
-    if (!hasData) {
+    const applied = _applyWorkbook(wb, '📊 Loaded data from tracker.xlsx');
+    if (!applied) {
       // Sheet is blank/placeholder — write current state into it instead
       await _writeXL();
-      return;
     }
-
-    // Merge into state and persist to localStorage only — do NOT call saveState()
-    // because that triggers _onSaveState → _writeXL() and overwrites the sheet we just read.
-    state.epics      = imported.epics;
-    state.tasks      = imported.tasks;
-    state.sprints    = imported.sprints;
-    state.subtasks   = imported.subtasks;
-    state.categories = imported.categories;
-    localStorage.setItem('dtt_data', JSON.stringify(state));
-    render();
-    showToast('📊 Loaded data from tracker.xlsx');
   } catch (e) {
     if (e && e.name === 'NotFoundError') {
-      // File doesn't exist yet — write current state into it
-      await _writeXL();
+      _setBtnActive(false);
+      _showMissingFilePrompt(_dbFolder);
     } else {
       showToast('⚠️ Could not read tracker.xlsx — ' + (e && e.message ? e.message : e));
     }
+  } finally {
+    _isReading = false;
   }
 }
 
@@ -286,41 +339,142 @@ function _xlDateToISO(val) {
   return '';
 }
 
-// ─── Reconnect banner ─────────────────────────────────
-function _showReconnectBanner(handle) {
-  if (document.getElementById('xl-reconnect-banner')) return;
+// ─── Remove reconnect banner ──────────────────────────
+function _removeReconnectBanner() {
+  const el = document.getElementById('xl-reconnect-banner');
+  if (el) el.remove();
+}
+
+// ─── Missing tracker.xlsx prompt ──────────────────────
+function _showMissingFilePrompt(handle) {
+  _removeReconnectBanner();
   const bar = document.createElement('div');
   bar.id        = 'xl-reconnect-banner';
   bar.className = 'xl-reconnect-banner';
   bar.innerHTML = `
-    <span>📊 Excel tracker was connected to <strong>db/</strong> — click to restore auto-save</span>
+    <span>⚠️ <strong>tracker.xlsx</strong> not found in <strong>db/</strong> folder</span>
+    <button class="btn btn-primary" id="xl-create-file-btn">Create tracker.xlsx</button>
+    <button class="btn btn-secondary" id="xl-reconnect-btn">Select db/ folder</button>
+    <button class="btn btn-ghost btn-icon" id="xl-reconnect-dismiss">✕</button>
+  `;
+  document.body.appendChild(bar);
+
+  document.getElementById('xl-create-file-btn').addEventListener('click', async () => {
+    _dbFolder = handle;
+    _setBtnActive(true);
+    _removeReconnectBanner();
+    const ok = await _writeXL();
+    if (ok) {
+      showToast('✅ Created db/tracker.xlsx with current data');
+    }
+  });
+
+  document.getElementById('xl-reconnect-btn').addEventListener('click', async () => {
+    _removeReconnectBanner();
+    await _pickFolder();
+  });
+
+  document.getElementById('xl-reconnect-dismiss').addEventListener('click', () => {
+    _removeReconnectBanner();
+  });
+}
+
+// ─── General Reconnect banner ─────────────────────────
+function _showReconnectBanner(handle) {
+  _removeReconnectBanner();
+  const bar = document.createElement('div');
+  bar.id        = 'xl-reconnect-banner';
+  bar.className = 'xl-reconnect-banner';
+  bar.innerHTML = `
+    <span>📊 Excel tracker disconnected — click to reconnect <strong>db/</strong> folder</span>
     <button class="btn btn-secondary" id="xl-reconnect-btn">Reconnect db/ folder</button>
     <button class="btn btn-ghost btn-icon" id="xl-reconnect-dismiss">✕</button>
   `;
   document.body.appendChild(bar);
+
   document.getElementById('xl-reconnect-btn').addEventListener('click', async () => {
-    bar.remove();
+    _removeReconnectBanner();
+    if (handle) {
+      try {
+        const perm = await handle.requestPermission({ mode: 'readwrite' });
+        if (perm === 'granted') {
+          _storedHandle = handle;
+          try {
+            await handle.getFileHandle('tracker.xlsx', { create: false });
+            _dbFolder = handle;
+            _setBtnActive(true);
+            await _readXL();
+            return;
+          } catch (err) {
+            if (err && err.name === 'NotFoundError') {
+              _showMissingFilePrompt(handle);
+              return;
+            }
+          }
+        }
+      } catch (_) {}
+    }
     await _pickFolder();
   });
+
   document.getElementById('xl-reconnect-dismiss').addEventListener('click', () => {
-    bar.remove();
-    _idbDel();
+    _removeReconnectBanner();
   });
 }
 
 // ═══════════════════════════════════════════════════
-// "DB" BUTTON — pick the db/ folder once
+// "DB" BUTTON — smart connect & folder picker
 // ═══════════════════════════════════════════════════
 
-document.getElementById('btn-connect-db').addEventListener('click', async () => {
+document.getElementById('btn-connect-db').addEventListener('click', async (e) => {
   if (!_FS_OK) {
     showToast('Auto-save needs Chrome or Edge. Use ⬇ Export instead.');
     return;
   }
+  await _waitForXlsx();
   if (!window.XLSX) {
     showToast('SheetJS not loaded yet — wait a moment and try again.');
     return;
   }
+
+  // Shift+Click forces picking a new folder
+  if (e.shiftKey) {
+    await _pickFolder();
+    return;
+  }
+
+  // If already connected, inform user
+  if (_dbFolder) {
+    showToast('📁 db/ folder is connected — Shift+Click DB button to change folder');
+    return;
+  }
+
+  // Try stored handle first without forcing file picker
+  const handle = _storedHandle || (await _idbGet().catch(() => null));
+  if (handle) {
+    try {
+      const perm = await handle.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        _storedHandle = handle;
+        try {
+          await handle.getFileHandle('tracker.xlsx', { create: false });
+          _dbFolder = handle;
+          _setBtnActive(true);
+          _removeReconnectBanner();
+          await _readXL();
+          showToast(`✅ Connected to ${handle.name}/ — tracker.xlsx loaded`);
+          return;
+        } catch (err) {
+          if (err && err.name === 'NotFoundError') {
+            _showMissingFilePrompt(handle);
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Fallback to picker
   await _pickFolder();
 });
 
@@ -336,12 +490,18 @@ async function _pickFolder() {
 
   try { await _idbSet(handle); } catch (_) {}
 
+  _storedHandle = handle;
   _dbFolder = handle;
+  _removeReconnectBanner();
 
   // Check if tracker.xlsx already exists in the selected folder — if so, read it
   let fileExists = false;
-  try { await handle.getFileHandle('tracker.xlsx', { create: false }); fileExists = true; }
-  catch (_) { fileExists = false; }
+  try {
+    await handle.getFileHandle('tracker.xlsx', { create: false });
+    fileExists = true;
+  } catch (_) {
+    fileExists = false;
+  }
 
   if (fileExists) {
     _setBtnActive(true);
@@ -351,6 +511,8 @@ async function _pickFolder() {
     if (ok) {
       _setBtnActive(true);
       showToast(`✅ Connected to ${handle.name}/ — tracker.xlsx updates on every change`);
+    } else {
+      _showMissingFilePrompt(handle);
     }
   }
 }
@@ -376,7 +538,7 @@ function _scheduleWrite() {
 }
 
 async function _writeXL() {
-  if (!_dbFolder) return false;
+  if (!_dbFolder || _isReading) return false;
   try {
     const X   = _xlsx();
     const buf = X.write(_buildWorkbook(), { bookType: 'xlsx', type: 'array' });
