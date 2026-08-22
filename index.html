@@ -12,7 +12,6 @@
 </head>
 <body>
   <div class="header-shell">
-    <div class="header-hover-zone"></div>
     <header class="header">
       <div class="header-inner">
       <h1 class="logo">📋 Daily Task Tracker</h1>
@@ -276,42 +275,45 @@
     </div>
   </div>
 
-  <!-- Category side-drawer -->
-  <div class="cat-drawer" id="cat-drawer">
-    <div class="cat-drawer-inner" id="cat-drawer-inner">
-      <!-- populated by renderCategoryDrawer() -->
+  <!-- App Body Container (below top header) -->
+  <div class="app-body">
+    <!-- Category side-drawer -->
+    <div class="cat-drawer" id="cat-drawer">
+      <div class="cat-drawer-inner" id="cat-drawer-inner">
+        <!-- populated by renderCategoryDrawer() -->
+      </div>
+      <!-- Toggle tab — always visible on the left edge -->
+      <button class="cat-drawer-tab" id="cat-drawer-tab" data-action="toggle-cat-drawer" title="Toggle categories">
+        <span class="cat-drawer-tab-icon">❮</span>
+        <span class="cat-drawer-tab-label">Categories</span>
+      </button>
     </div>
-    <!-- Toggle tab — always visible on the left edge -->
-    <button class="cat-drawer-tab" id="cat-drawer-tab" data-action="toggle-cat-drawer" title="Toggle categories">
-      <span class="cat-drawer-tab-icon">❮</span>
-      <span class="cat-drawer-tab-label">Categories</span>
-    </button>
+    <!-- Backdrop (closes drawer on outside click) -->
+    <div class="cat-drawer-backdrop hidden" id="cat-drawer-backdrop"></div>
+
+    <!-- Main content -->
+    <main class="main">
+      <!-- Summary bar -->
+      <section class="summary-bar" id="summary-bar"></section>
+
+      <!-- Grid view epic picker (visible only in grid mode) -->
+      <div class="gv-picker hidden" id="gv-picker">
+        <span class="gv-picker-label">Select epics <span class="gv-picker-hint">(2 per row)</span>:</span>
+        <div class="gv-picker-chips" id="gv-picker-chips"></div>
+        <label class="gv-picker-select">
+          <span>Shared Sprint</span>
+          <select id="gv-shared-sprint-select" class="form-input form-input--compact">
+            <option value="">All sprints</option>
+          </select>
+        </label>
+        <button class="btn btn-ghost btn-sm" id="gv-select-all">All</button>
+        <button class="btn btn-ghost btn-sm" id="gv-clear-all">None</button>
+      </div>
+
+      <!-- Kanban board / Grid view (shared container) -->
+      <section class="epics-grid" id="epics-grid"></section>
+    </main>
   </div>
-  <!-- Backdrop (closes drawer on outside click) -->
-  <div class="cat-drawer-backdrop hidden" id="cat-drawer-backdrop"></div>
-
-  <!-- Main content -->
-  <main class="main">
-    <!-- Summary bar -->
-    <section class="summary-bar" id="summary-bar"></section>
-
-    <!-- Grid view epic picker (visible only in grid mode) -->
-    <div class="gv-picker hidden" id="gv-picker">
-      <span class="gv-picker-label">Select epics <span class="gv-picker-hint">(2 per row)</span>:</span>
-      <div class="gv-picker-chips" id="gv-picker-chips"></div>
-      <label class="gv-picker-select">
-        <span>Shared Sprint</span>
-        <select id="gv-shared-sprint-select" class="form-input form-input--compact">
-          <option value="">All sprints</option>
-        </select>
-      </label>
-      <button class="btn btn-ghost btn-sm" id="gv-select-all">All</button>
-      <button class="btn btn-ghost btn-sm" id="gv-clear-all">None</button>
-    </div>
-
-    <!-- Kanban board / Grid view (shared container) -->
-    <section class="epics-grid" id="epics-grid"></section>
-  </main>
 
   <!-- Schedule Panel — draggable floating window -->
   <div class="sched-panel hidden" id="sched-panel">
